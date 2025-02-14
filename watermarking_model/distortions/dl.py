@@ -8,7 +8,7 @@ import kornia
 from watermarking_model.distortions.frequency2 import fixed_STFT
 
 SAMPLE_RATE = 22050
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
 class distortion(nn.Module):
     def __init__(self, process_config, ):
         super(distortion, self).__init__()

@@ -5,8 +5,8 @@ adv: True
 
 
 path:
-#  raw_path: "/storage/seit-guohanqi/librispeech_dataset/LibriSpeech_wav"
-  raw_path: "/home/yizhu/Data/LibriSpeech_wav"
+  raw_path: "/storage/seit-guohanqi/librispeech_dataset/LibriSpeech_wav"
+#  raw_path: "/home/yizhu/Data/LibriSpeech_wav"
   raw_path_test: "experiments/cloned_speechs"
   wm_speech: "./results/wm_speech"
   ckpt: "results/ckpt/"
@@ -26,7 +26,7 @@ optimize:
   # lambda_m: 0.01
   lambda_no_m: 0.01
   lambda_a: 0.01
-  batch_size: 1
+  batch_size: 6  # remote batch_size=6, local batch_size=2
   step_size: 5000 # large value means do not decay
   gamma: 0.98
   betas: [0.9, 0.98]
@@ -43,12 +43,12 @@ optimize:
 
 
 iter:
-  epoch: 2
+  epoch: 10
   # epoch: 100
   save_circle: 5
   show_circle: 100
   val_circle: 100
-  data_divider: 1
+  data_divider: 5
   test_record_num: 100
 
 wandb:
