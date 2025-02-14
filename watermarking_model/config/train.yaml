@@ -5,7 +5,8 @@ adv: True
 
 
 path:
-  raw_path: "/public/liuchang/data/LibriSpeech_wav/"
+#  raw_path: "/storage/seit-guohanqi/librispeech_dataset/LibriSpeech_wav"
+  raw_path: "/home/yizhu/Data/LibriSpeech_wav"
   raw_path_test: "experiments/cloned_speechs"
   wm_speech: "./results/wm_speech"
   ckpt: "results/ckpt/"
@@ -13,7 +14,9 @@ path:
 
 
 watermark:
-  length: 10
+  length: 16
+  future_amt: 51
+  future_amt_waveform: 8000
 
 
 optimize:
@@ -40,8 +43,18 @@ optimize:
 
 
 iter:
-  epoch: 20
+  epoch: 2
   # epoch: 100
   save_circle: 5
   show_circle: 100
   val_circle: 100
+  data_divider: 1
+  test_record_num: 100
+
+wandb:
+  enabled: false  # Set to true to enable wandb logging
+  project: "real-time-voice-watermark"
+  name: "shift 1"
+  key: "9a11e5364efe3bb8fedb3741188ee0d714e942e2"
+  WANDB_DIR: "/storage/seit-guohanqi/yizhu_wen/Real-time-Voice-Watermark/wandb_dir"
+  WANDB_TMP_DIR: "/storage/seit-guohanqi/yizhu_wen/Real-time-Voice-Watermark/wandb_tmp_dir"

@@ -243,7 +243,7 @@ class ReluBlock(nn.Module):
     def __init__(self, c_in, c_out, kernel_size, stride, padding):
         super(ReluBlock, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=True),
+            nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding, padding_mode="reflect", bias=True),
             nn.InstanceNorm2d(c_out),
             nn.LeakyReLU()
             )
@@ -287,6 +287,27 @@ class WatermarkEmbedder(nn.Module):
 
         for i in range(n_layers-2):
             layers.append(core(c_in=hidden_dim, c_out=hidden_dim, kernel_size=3, stride=1, padding=1))
+
+        ######################### Additional 2 conv2D layers for real time
+        layers.append(
+            ReluBlock(
+                c_in=hidden_dim,
+                c_out=hidden_dim,
+                kernel_size=(3, 5),
+                stride=(1, 2),
+                padding=(1, 2),
+            )
+        )
+        layers.append(
+            ReluBlock(
+                c_in=hidden_dim,
+                c_out=hidden_dim,
+                kernel_size=(3, 4),
+                stride=(1, 2),
+                padding=(1, 1),
+            )
+        )
+        #########################
 
         layers.append(core(c_in=hidden_dim, c_out=1, kernel_size=1, stride=1, padding=0))
 

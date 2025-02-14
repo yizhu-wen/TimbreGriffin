@@ -14,10 +14,9 @@ class Loss(nn.Module):
         return embedding_loss, msg_loss
 
 class Loss_identity(nn.Module):
-    def __init__(self, train_config):
+    def __init__(self):
         super(Loss_identity, self).__init__()
         self.msg_loss = nn.MSELoss()
-        # self.msg_loss = nn.CrossEntropyLoss()
         self.embedding_loss = nn.MSELoss()
     
     def en_de_loss(self, x, w_x, msg, rec_msg):

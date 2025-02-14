@@ -40,7 +40,7 @@ class Preprocessor:
         self.pitch_normalization = config["preprocessing"]["pitch"]["normalization"]
         self.energy_normalization = config["preprocessing"]["energy"]["normalization"]
 
-        self.STFT = Audio.stft.TacotronSTFT(
+        self.STFT= Audio.stft.TacotronSTFT(
             config["preprocessing"]["stft"]["filter_length"],
             config["preprocessing"]["stft"]["hop_length"],
             config["preprocessing"]["stft"]["win_length"],

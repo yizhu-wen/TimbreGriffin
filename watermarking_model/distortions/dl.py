@@ -1,13 +1,11 @@
 import torch
 import random
 import torch.nn as nn
-from distortions.mel_transform import STFT
-import pdb
 import numpy as np
 import julius
 from audiomentations import Compose, Mp3Compression
 import kornia
-from distortions.frequency import fixed_STFT
+from watermarking_model.distortions.frequency2 import fixed_STFT
 
 SAMPLE_RATE = 22050
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
