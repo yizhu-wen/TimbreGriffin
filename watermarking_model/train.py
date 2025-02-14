@@ -281,7 +281,7 @@ def main(configs):
                 logging.info('-' * 100)
                 logging.info("step:{} - wav_loss:{:.8f} - msg_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - norm:{:.8f} - patch_num:{} - pad_num:{} - wav_len:{} - d_loss_on_encoded:{} - d_loss_on_cover:{}".format(\
                     step, losses[0], losses[1], decoder_acc[0], decoder_acc[1],\
-                        snr, norm2, sample["patch_num"].item(), sample["pad_num"].item(), wav_matrix.shape[2], d_loss_on_encoded, d_loss_on_cover))
+                        snr, norm2, sample["patch_num"].item(), sample["pad_num"].item(), wav_matrix.shape[2], d_loss_on_encoded.item(), d_loss_on_cover.item()))
 
         train_avg_acc[0] /= step
         train_avg_acc[1] /= step
@@ -364,7 +364,7 @@ def main(configs):
             val_avg_d_loss_on_cover /= count
             logging.info('#e' * 60)
             logging.info("epoch:{} - wav_loss:{:.8f} - msg_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - d_loss_on_encoded:{} - d_loss_on_cover:{}".format(
-                ep, val_avg_wav_loss, val_avg_msg_loss, val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded, val_avg_d_loss_on_cover))
+                ep, val_avg_wav_loss, val_avg_msg_loss, val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded.item(), val_avg_d_loss_on_cover.item()))
         val_metrics = {
             "val/wav_loss": val_avg_wav_loss,
             "val/msg_loss": val_avg_msg_loss,
@@ -429,7 +429,7 @@ def main(configs):
         test_avg_d_loss_on_cover /= count
         logging.info('#e' * 60)
         logging.info("Test: wav_loss:{:.8f} - msg_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - d_loss_on_encoded:{} - d_loss_on_cover:{}".format(
-            val_avg_wav_loss, val_avg_msg_loss, val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded, val_avg_d_loss_on_cover))
+            val_avg_wav_loss, val_avg_msg_loss, val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded.item(), val_avg_d_loss_on_cover.item()))
 
 
 if __name__ == "__main__":
