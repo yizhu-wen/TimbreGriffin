@@ -279,11 +279,9 @@ def main(configs):
 
             if step % show_circle == 0:
                 logging.info('-' * 100)
-                logging.info("step:{} - wav_loss:{:.8f} - msg_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - norm:{:.8f} - patch_num:{} - pad_num:{} - wav_len:{} ".format(
+                logging.info("step:{} - wav_loss:{:.8f} - msg_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - norm:{:.8f} - wav_len:{} ".format(
                     step, losses[0], losses[1], decoder_acc[0], decoder_acc[1],
-                    snr, norm2, sample["patch_num"].item(), sample["pad_num"].item(), wav_matrix.shape[2]))
-                print(d_loss_on_encoded.item())
-                print(d_loss_on_cover.item())
+                    snr, norm2, wav_matrix.shape[2], d_loss_on_encoded.item(), d_loss_on_cover.item()))
 
         train_avg_acc[0] /= step
         train_avg_acc[1] /= step
