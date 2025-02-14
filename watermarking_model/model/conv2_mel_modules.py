@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 from torch.nn import LeakyReLU
 from .blocks import FCBlock, Conv2Encoder, WatermarkEmbedder, WatermarkExtracter, ReluBlock
-from watermarking_model.distortions.frequency2 import fixed_STFT
-from watermarking_model.distortions.dl import distortion
+from distortions.frequency2 import fixed_STFT
+from distortions.dl import distortion
 
 
 # Optional: set up a small constant
