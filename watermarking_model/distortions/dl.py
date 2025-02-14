@@ -5,7 +5,7 @@ import numpy as np
 import julius
 from audiomentations import Compose, Mp3Compression
 import kornia
-from watermarking_model.distortions.frequency2 import fixed_STFT
+from distortions.frequency2 import fixed_STFT
 
 SAMPLE_RATE = 22050
 device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
