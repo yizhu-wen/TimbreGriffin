@@ -49,7 +49,7 @@ def log(
 
 from torch.nn.functional import mse_loss
 from pypesq import pesq as pesq_val
-from resemblyzer import preprocess_wav, VoiceEncoder
+# from resemblyzer import preprocess_wav, VoiceEncoder
 import numpy as np
 import soundfile
 import pdb
@@ -57,7 +57,7 @@ from pathlib import Path
 from sklearn.metrics.pairwise import cosine_similarity
 import torchaudio
 device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
-resamber_encoder = VoiceEncoder(device=device)
+# resamber_encoder = VoiceEncoder(device=device)
 pesq_resampler = torchaudio.transforms.Resample(22050, 16000).to(device)
 
 
@@ -66,27 +66,27 @@ def cosine_similarity(x, y):
     y = np.array(y).reshape(-1)
     return np.dot(x, y) / (np.sqrt(np.dot(x, x)) * np.sqrt(np.dot(y, y)))
 
-def fidelity(a, b, sr):
-    if a.shape[2] > b.shape[2]:
-        distored_b = torch.cat([b.detach(), torch.zeros(b.shape[0],b.shape[1],a.shape[2]-b.shape[2]).to(device)], dim=2)
-        snr_score = 10 * torch.log10(mse_loss(a.detach().cpu(), torch.zeros(a.shape)) / mse_loss(a.detach().cpu(), distored_b.detach().cpu()))
-        pesq_score = pesq_val(pesq_resampler(a).detach().cpu().squeeze(0).squeeze(0).numpy(), pesq_resampler(distored_b).detach().cpu().squeeze(0).squeeze(0).numpy(), fs=16000)
-    elif a.shape[2] < b.shape[2]:
-        distored_b = b[:,:,:a.shape[2]]
-        snr_score = 10 * torch.log10(mse_loss(a.detach().cpu(), torch.zeros(a.shape)) / mse_loss(a.detach().cpu(), distored_b.detach().cpu()))
-        pesq_score = pesq_val(pesq_resampler(a).detach().cpu().squeeze(0).squeeze(0).numpy(), pesq_resampler(distored_b).detach().cpu().squeeze(0).squeeze(0).numpy(), fs=16000)
-    else:
-        snr_score = 10 * torch.log10(mse_loss(a.detach().cpu(), torch.zeros(a.shape)) / mse_loss(a.detach().cpu(), b.detach().cpu()))
-        pesq_score = pesq_val(pesq_resampler(a).detach().cpu().squeeze(0).squeeze(0).numpy(), pesq_resampler(b).detach().cpu().squeeze(0).squeeze(0).numpy(), fs=16000)
-
-    wav_a = preprocess_wav(a.cpu().squeeze(0).squeeze(0).detach().numpy(), source_sr=sr)
-    wav_b = preprocess_wav(b.cpu().squeeze(0).squeeze(0).detach().numpy(), source_sr=sr)
-    embeds_a = resamber_encoder.embed_utterance(wav_a)
-    embeds_b = resamber_encoder.embed_utterance(wav_b)
-    utterance_sim_matrix = cosine_similarity(embeds_a, embeds_b)
-    spk_sim_matrix = utterance_sim_matrix
-    # pdb.set_trace()
-    return snr_score, pesq_score, utterance_sim_matrix, spk_sim_matrix
+# def fidelity(a, b, sr):
+#     if a.shape[2] > b.shape[2]:
+#         distored_b = torch.cat([b.detach(), torch.zeros(b.shape[0],b.shape[1],a.shape[2]-b.shape[2]).to(device)], dim=2)
+#         snr_score = 10 * torch.log10(mse_loss(a.detach().cpu(), torch.zeros(a.shape)) / mse_loss(a.detach().cpu(), distored_b.detach().cpu()))
+#         pesq_score = pesq_val(pesq_resampler(a).detach().cpu().squeeze(0).squeeze(0).numpy(), pesq_resampler(distored_b).detach().cpu().squeeze(0).squeeze(0).numpy(), fs=16000)
+#     elif a.shape[2] < b.shape[2]:
+#         distored_b = b[:,:,:a.shape[2]]
+#         snr_score = 10 * torch.log10(mse_loss(a.detach().cpu(), torch.zeros(a.shape)) / mse_loss(a.detach().cpu(), distored_b.detach().cpu()))
+#         pesq_score = pesq_val(pesq_resampler(a).detach().cpu().squeeze(0).squeeze(0).numpy(), pesq_resampler(distored_b).detach().cpu().squeeze(0).squeeze(0).numpy(), fs=16000)
+#     else:
+#         snr_score = 10 * torch.log10(mse_loss(a.detach().cpu(), torch.zeros(a.shape)) / mse_loss(a.detach().cpu(), b.detach().cpu()))
+#         pesq_score = pesq_val(pesq_resampler(a).detach().cpu().squeeze(0).squeeze(0).numpy(), pesq_resampler(b).detach().cpu().squeeze(0).squeeze(0).numpy(), fs=16000)
+#
+#     wav_a = preprocess_wav(a.cpu().squeeze(0).squeeze(0).detach().numpy(), source_sr=sr)
+#     wav_b = preprocess_wav(b.cpu().squeeze(0).squeeze(0).detach().numpy(), source_sr=sr)
+#     embeds_a = resamber_encoder.embed_utterance(wav_a)
+#     embeds_b = resamber_encoder.embed_utterance(wav_b)
+#     utterance_sim_matrix = cosine_similarity(embeds_a, embeds_b)
+#     spk_sim_matrix = utterance_sim_matrix
+#     # pdb.set_trace()
+#     return snr_score, pesq_score, utterance_sim_matrix, spk_sim_matrix
     
 
 
