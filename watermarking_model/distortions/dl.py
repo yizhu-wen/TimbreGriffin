@@ -7,19 +7,18 @@ from audiomentations import Compose, Mp3Compression
 import kornia
 from distortions.frequency2 import fixed_STFT
 
-SAMPLE_RATE = 22050
-device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+SAMPLE_RATE = 16000
 class distortion(nn.Module):
     def __init__(self, process_config, ):
         super(distortion, self).__init__()
-        self.resample_kernel1 = julius.ResampleFrac(SAMPLE_RATE, 16000).to(device)
-        self.resample_kernel1_re = julius.ResampleFrac(16000, SAMPLE_RATE).to(device)
-        self.resample_kernel2 = julius.ResampleFrac(SAMPLE_RATE, 8000).to(device)
-        self.resample_kernel2_re = julius.ResampleFrac(8000, SAMPLE_RATE,).to(device)
+        self.device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+        self.resample_kernel1 = julius.ResampleFrac(SAMPLE_RATE, 16000).to(self.device)
+        self.resample_kernel1_re = julius.ResampleFrac(16000, SAMPLE_RATE).to(self.device)
+        self.resample_kernel2 = julius.ResampleFrac(SAMPLE_RATE, 8000).to(self.device)
+        self.resample_kernel2_re = julius.ResampleFrac(8000, SAMPLE_RATE,).to(self.device)
         self.augment = Compose([Mp3Compression(p=1.0, min_bitrate=64, max_bitrate=64)])
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.band_lowpass = julius.LowPassFilter(2000/SAMPLE_RATE).to(device)
-        self.band_highpass = julius.HighPassFilter(500/SAMPLE_RATE).to(device)
+        self.band_lowpass = julius.LowPassFilter(2000/SAMPLE_RATE).to(self.device)
+        self.band_highpass = julius.HighPassFilter(500/SAMPLE_RATE).to(self.device)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"]).to(self.device)
     
     def none(self, x):

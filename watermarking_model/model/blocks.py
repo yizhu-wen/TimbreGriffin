@@ -236,6 +236,7 @@ class SkipGatedBlock(nn.Module):
         output = conv_output * gated_output
         if self.skip_connection: 
             output += x
+
         return output
 
 

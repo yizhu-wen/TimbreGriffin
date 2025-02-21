@@ -14,7 +14,7 @@ path:
 
 
 watermark:
-  length: 16
+  length: 10
   future_amt: 51
   future_amt_waveform: 8000
 

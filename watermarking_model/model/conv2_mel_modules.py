@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.nn import LeakyReLU
 from .blocks import FCBlock, Conv2Encoder, WatermarkEmbedder, WatermarkExtracter, ReluBlock
 from distortions.frequency2 import fixed_STFT
-from distortions.dl import distortion
+# from distortions.dl import distortion
 
 
 # Optional: set up a small constant
@@ -58,13 +58,13 @@ def save_waveform(a_tensor, flag='original'):
     import numpy as np
     import soundfile
     root = "draw_figure"
-    y = a_tensor.cpu().numpy()
-    soundfile.write(os.path.join(root, flag + "_waveform.wav"), y, samplerate=22050)
-    D = librosa.stft(y)
-    spectrogram = np.abs(D)
-    img=librosa.display.specshow(librosa.amplitude_to_db(spectrogram, ref=np.max), sr=22050, x_axis='time', y_axis='log', y_coords=None);
-    plt.axis('off')
-    plt.savefig(os.path.join(root, flag + '_amplitude_spectrogram_from_waveform.png'), bbox_inches='tight', pad_inches=0.0)
+    y = a_tensor.detach().cpu().numpy()
+    soundfile.write(os.path.join(root, flag + "_waveform.wav"), y, samplerate=16000)
+    # D = librosa.stft(y)
+    # spectrogram = np.abs(D)
+    # img=librosa.display.specshow(librosa.amplitude_to_db(spectrogram, ref=np.max), sr=22050, x_axis='time', y_axis='log', y_coords=None);
+    # plt.axis('off')
+    # plt.savefig(os.path.join(root, flag + '_amplitude_spectrogram_from_waveform.png'), bbox_inches='tight', pad_inches=0.0)
 
 
 
@@ -105,12 +105,12 @@ class Encoder(nn.Module):
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
-        self.msg_linear_in = FCBlock(msg_length, win_dim, activation=LeakyReLU(inplace=True))
+        self.msg_linear_in = FCBlock(msg_length, win_dim, activation=LeakyReLU(inplace=False))
 
         #stft transform
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
 
-        self.ENc = Conv2Encoder(input_channel=2, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_CE)
+        self.ENc = Conv2Encoder(input_channel=1, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_CE)
 
         self.EM = WatermarkEmbedder(input_channel=self.EM_input_dim, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_EM)
 
@@ -138,12 +138,9 @@ class Encoder(nn.Module):
 
     def forward(self, x, msg, global_step):
         num_samples = x.shape[-1]
-        stft_result = self.stft.transform(x).permute(0, 3, 1, 2)
-        B, _, freq_bin, time_frames = stft_result.shape  # [B, 2, freq_bin, time_frames]
-        # Compute magnitude and phase
-        spect = torch.sqrt(stft_result[:, 0, :, :] ** 2 + stft_result[:, 1, :, :] ** 2) # Shape: (B, n_fft//2+1, T)
-        phase = torch.atan2(stft_result[:, 0, :, :], stft_result[:, 1, :, :])  # Shape: (B, n_fft//2+1, T)
-
+        spect, phase = self.stft.transform(x)
+        B, freq_bin, time_frames = spect.shape  # [B, freq_bin, time_frames]
+        spect = spect.unsqueeze(1)
         # Evaluate how many chunks we can process
         # 2s input + 0.05s calculation delay
         # 2.05*16000 = 32800
@@ -158,12 +155,16 @@ class Encoder(nn.Module):
 
         list_of_watermarks = []
         for i in range(int((time_frames - (voice_prefilling + self.future_amt))/(self.future_amt+1))):
-            carrier_encoded = self.ENc(stft_result[:, :, :, i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)])
+            carrier_encoded = self.ENc(spect[:, :, :, i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)])
+            # torch.Size([B, 1, 161])
+            # torch.Size([B, 161, 1])
+            # torch.Size([B, 1, 161, 1])
+            # torch.Size([B, 1, 161, 206])
             watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 1,
                                                                                             carrier_encoded.shape[3])
 
-            spect_segment = torch.sqrt(stft_result[:, 0, :, i * (self.future_amt + 1):voice_prefilling + i * (self.future_amt + 1)] ** 2 + stft_result[:, 1, :, i * (self.future_amt + 1):voice_prefilling + i * (self.future_amt + 1)] ** 2)
-            concatenated_feature = torch.cat((carrier_encoded, spect_segment.unsqueeze(1), watermark_encoded), dim=1)
+            concatenated_feature = torch.cat((carrier_encoded, spect[:, :, :, i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)], watermark_encoded), dim=1)
+
             # Embed the watermark
             carrier_watermarked = self.EM(concatenated_feature)
             # Append both the watermark chunk and the pilot segment
@@ -172,16 +173,18 @@ class Encoder(nn.Module):
         if len(list_of_watermarks) > 0:
             watermark = torch.cat(list_of_watermarks, dim=-1)
             all_watermark_stft = self.pad_w_zero_stft(
-                stft_result, watermark
+                spect, watermark
             )
-            mask=stft_result!=0
+            mask=spect!=0
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
-            all_watermark_spect = torch.sqrt(all_watermark_stft[:, 0, :, :] ** 2 + all_watermark_stft[:, 1, :, :] ** 2)
 
             self.stft.num_samples = num_samples
-            y = self.stft.inverse(all_watermark_spect, phase)
+
+            y = self.stft.inverse(all_watermark_stft.squeeze(1), phase).squeeze(1)
+
             return y, all_watermark_stft
         else:
+            print("Not enough watermarking!!!!")
             return None
 
     
@@ -211,8 +214,8 @@ class Decoder(nn.Module):
     def __init__(self, process_config, model_config, train_config, msg_length):
         super(Decoder, self).__init__()
         self.robust = model_config["robust"]
-        if self.robust:
-            self.dl = distortion()
+        # if self.robust:
+        #     self.dl = distortion()
 
         # self.mel_transform = TacotronSTFT(filter_length=process_config["mel"]["n_fft"], hop_length=process_config["mel"]["hop_length"], win_length=process_config["mel"]["win_length"])
         # self.vocoder = get_vocoder(device)
@@ -238,19 +241,12 @@ class Decoder(nn.Module):
             y_d_d = self.dl(y_d, self.robust)
         else:
             y_d_d = y_d
-        stft_result = self.stft.transform(y_d_d).permute(0, 3, 1, 2)
-        # Compute magnitude and phase
-        spect = torch.sqrt(stft_result[:, 0, :, :] ** 2 + stft_result[:, 1, :, :] ** 2) # Shape: (B, n_fft//2+1, T)
-        # phase = torch.atan2(stft_result[:, 0, :, :], stft_result[:, 1, :, :])  # Shape: (B, n_fft//2+1, T)
-
+        spect, phase = self.stft.transform(y_d_d)
         extracted_wm = self.EX(spect.unsqueeze(1)).squeeze(1)
         msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
         msg = self.msg_linear_out(msg)
 
-        stft_result_identity = self.stft.transform(y_identity)
-        # Compute magnitude and phase
-        spect_identity = torch.sqrt(stft_result[:, 0, :, :] ** 2 + stft_result[:, 1, :, :] ** 2) # Shape: (B, n_fft//2+1, T)
-        # phase = torch.atan2(stft_result[:, 0, :, :], stft_result[:, 1, :, :])  # Shape: (B, n_fft//2+1, T)
+        spect_identity, phase_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(spect_identity.unsqueeze(1)).squeeze(1)
         msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
         msg_identity = self.msg_linear_out(msg_identity)
@@ -301,10 +297,7 @@ class Discriminator(nn.Module):
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
 
     def forward(self, x):
-        stft_result = self.stft.transform(x).permute(0, 3, 1, 2)
-        # Compute magnitude and phase
-        spect = torch.sqrt(stft_result[:, 0, :, :] ** 2 + stft_result[:, 1, :, :] ** 2) # Shape: (B, n_fft//2+1, T)
-        # phase = torch.atan2(stft_result[:, 0, :, :], stft_result[:, 1, :, :])  # Shape: (B, n_fft//2+1, T)
+        spect, phase = self.stft.transform(x)
         x = spect.unsqueeze(1)
         x = self.conv(x)
         x = x.squeeze(2).squeeze(2)

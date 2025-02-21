@@ -282,8 +282,8 @@ def dynamic_range_decompression(x, C=1):
     """
     return torch.exp(x) / C
 
-def window_sumsquare(window, n_frames, hop_length=200, win_length=800,
-                     n_fft=800, dtype=np.float32, norm=None):
+def window_sumsquare(window, n_frames, hop_length=160, win_length=320,
+                     n_fft=320, dtype=np.float32, norm=None):
     """
     # from librosa 0.6
     Compute the sum-square envelope of a window function at a given hop length.
@@ -325,7 +325,7 @@ def window_sumsquare(window, n_frames, hop_length=200, win_length=800,
     # Compute the squared window at the desired length
     win_sq = get_window(window, win_length, fftbins=True)
     win_sq = librosa_util.normalize(win_sq, norm=norm)**2
-    win_sq = librosa_util.pad_center(win_sq, n_fft)
+    win_sq = librosa_util.pad_center(win_sq, size=n_fft)
 
     # Fill the envelope
     for i in range(n_frames):
@@ -333,154 +333,11 @@ def window_sumsquare(window, n_frames, hop_length=200, win_length=800,
         x[sample:min(n, sample + n_fft)] += win_sq[:max(0, min(n_fft, n - sample))]
     return x
 
-class STFT(torch.nn.Module):
-    """adapted from Prem Seetharaman's https://github.com/pseeth/pytorch-stft"""
-    def __init__(self, filter_length=800, hop_length=200, win_length=800,
-                 window='hann'):
-        super(STFT, self).__init__()
-        self.filter_length = filter_length
-        self.hop_length = hop_length
-        self.win_length = win_length
-        self.window = window
-        self.forward_transform = None
-        scale = self.filter_length / self.hop_length
-        fourier_basis = np.fft.fft(np.eye(self.filter_length))
-
-        cutoff = int((self.filter_length / 2 + 1))
-        fourier_basis = np.vstack([np.real(fourier_basis[:cutoff, :]),
-                                   np.imag(fourier_basis[:cutoff, :])])
-
-        forward_basis = torch.FloatTensor(fourier_basis[:, None, :])
-        inverse_basis = torch.FloatTensor(
-            np.linalg.pinv(scale * fourier_basis).T[:, None, :])
-
-        if window is not None:
-            assert(filter_length >= win_length)
-            # get window and zero center pad it to filter_length
-            fft_window = get_window(window, win_length, fftbins=True)
-            fft_window = pad_center(fft_window, filter_length)
-            fft_window = torch.from_numpy(fft_window).float()
-
-            # window the bases
-            forward_basis *= fft_window
-            inverse_basis *= fft_window
-
-        self.register_buffer('forward_basis', forward_basis.float())
-        self.register_buffer('inverse_basis', inverse_basis.float())
-
-    def transform(self, input_data):
-        num_batches = input_data.size(0)
-        num_samples = input_data.size(1)
-
-        self.num_samples = num_samples
-
-        # similar to librosa, reflect-pad the input
-        input_data = input_data.view(num_batches, 1, num_samples)
-        input_data = F.pad(
-            input_data.unsqueeze(1),
-            (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
-            mode='reflect')
-        input_data = input_data.squeeze(1)
-
-        forward_transform = F.conv1d(
-            input_data,
-            Variable(self.forward_basis, requires_grad=False),
-            stride=self.hop_length,
-            padding=0)
-
-        cutoff = int((self.filter_length / 2) + 1)
-        real_part = forward_transform[:, :cutoff, :]
-        imag_part = forward_transform[:, cutoff:, :]
-
-        magnitude = torch.sqrt(real_part**2 + imag_part**2)
-        phase = torch.autograd.Variable(
-            torch.atan2(imag_part.data, real_part.data))
-
-        return magnitude, phase
-
-    def inverse(self, magnitude, phase):
-        recombine_magnitude_phase = torch.cat(
-            [magnitude*torch.cos(phase), magnitude*torch.sin(phase)], dim=1)
-
-        inverse_transform = F.conv_transpose1d(
-            recombine_magnitude_phase,
-            Variable(self.inverse_basis, requires_grad=False),
-            stride=self.hop_length,
-            padding=0)
-
-        if self.window is not None:
-            window_sum = window_sumsquare(
-                self.window, magnitude.size(-1), hop_length=self.hop_length,
-                win_length=self.win_length, n_fft=self.filter_length,
-                dtype=np.float32)
-            # remove modulation effects
-            approx_nonzero_indices = torch.from_numpy(
-                np.where(window_sum > tiny(window_sum))[0])
-            window_sum = torch.autograd.Variable(
-                torch.from_numpy(window_sum), requires_grad=False)
-            window_sum = window_sum.cuda() if magnitude.is_cuda else window_sum
-            inverse_transform[:, :, approx_nonzero_indices] /= window_sum[approx_nonzero_indices]
-
-            # scale by hop ratio
-            inverse_transform *= float(self.filter_length) / self.hop_length
-
-        inverse_transform = inverse_transform[:, :, int(self.filter_length/2):]
-        inverse_transform = inverse_transform[:, :, :-int(self.filter_length/2):]
-
-        return inverse_transform
-
-    def forward(self, input_data):
-        self.magnitude, self.phase = self.transform(input_data)
-        reconstruction = self.inverse(self.magnitude, self.phase)
-        return reconstruction
-
-class TacotronSTFT(torch.nn.Module):
-    def __init__(self, filter_length=1024, hop_length=256, win_length=1024,
-                 n_mel_channels=80, sampling_rate=22050, mel_fmin=0.0,
-                 mel_fmax=8000.0):
-        super(TacotronSTFT, self).__init__()
-        self.n_mel_channels = n_mel_channels
-        self.sampling_rate = sampling_rate
-        self.stft_fn = STFT(filter_length, hop_length, win_length)
-        mel_basis = librosa_mel_fn(
-            sampling_rate, filter_length, n_mel_channels, mel_fmin, mel_fmax)
-        mel_basis = torch.from_numpy(mel_basis).float()
-        self.register_buffer('mel_basis', mel_basis)
-
-    def spectral_normalize(self, magnitudes):
-        output = dynamic_range_compression(magnitudes)
-        return output
-
-    def spectral_de_normalize(self, magnitudes):
-        output = dynamic_range_decompression(magnitudes)
-        return output
-
-    def mel_spectrogram(self, y):
-        """Computes mel-spectrograms from a batch of waves
-        PARAMS
-        ------
-        y: Variable(torch.FloatTensor) with shape (B, T) in range [-1, 1]
-
-        RETURNS
-        -------
-        mel_output: torch.FloatTensor of shape (B, n_mel_channels, T)
-        """
-        # assert(torch.min(y.data) >= -1)
-        # assert(torch.max(y.data) <= 1)
-
-        magnitudes, phases = self.stft_fn.transform(y)
-        # magnitudes = magnitudes.data
-        mel_output = torch.matmul(self.mel_basis, magnitudes)
-        mel_output = self.spectral_normalize(mel_output)
-        return mel_output
-
-
-
-# class fixed_STFT(torch.nn.Module):
+# class STFT(torch.nn.Module):
 #     """adapted from Prem Seetharaman's https://github.com/pseeth/pytorch-stft"""
 #     def __init__(self, filter_length=800, hop_length=200, win_length=800,
 #                  window='hann'):
-#         super(fixed_STFT, self).__init__()
+#         super(STFT, self).__init__()
 #         self.filter_length = filter_length
 #         self.hop_length = hop_length
 #         self.win_length = win_length
@@ -501,7 +358,7 @@ class TacotronSTFT(torch.nn.Module):
 #             assert(filter_length >= win_length)
 #             # get window and zero center pad it to filter_length
 #             fft_window = get_window(window, win_length, fftbins=True)
-#             fft_window = pad_center(fft_window, filter_length)
+#             fft_window = pad_center(fft_window, size=filter_length)
 #             fft_window = torch.from_numpy(fft_window).float()
 #
 #             # window the bases
@@ -512,14 +369,13 @@ class TacotronSTFT(torch.nn.Module):
 #         self.register_buffer('inverse_basis', inverse_basis.float())
 #
 #     def transform(self, input_data):
-#         # num_batches = input_data.size(0)
-#         # num_samples = input_data.size(1)
+#         num_batches = input_data.size(0)
+#         num_samples = input_data.size(1)
 #
-#         # self.num_samples = num_samples
+#         self.num_samples = num_samples
 #
-#         # # similar to librosa, reflect-pad the input
-#         # input_data = input_data.view(num_batches, 1, num_samples)
-#
+#         # similar to librosa, reflect-pad the input
+#         input_data = input_data.view(num_batches, 1, num_samples)
 #         input_data = F.pad(
 #             input_data.unsqueeze(1),
 #             (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
@@ -569,8 +425,7 @@ class TacotronSTFT(torch.nn.Module):
 #             inverse_transform *= float(self.filter_length) / self.hop_length
 #
 #         inverse_transform = inverse_transform[:, :, int(self.filter_length/2):]
-#         # inverse_transform = inverse_transform[:, :, :-int(self.filter_length/2):]
-#         inverse_transform = inverse_transform[:, :, :self.num_samples]
+#         inverse_transform = inverse_transform[:, :, :-int(self.filter_length/2):]
 #
 #         return inverse_transform
 #
@@ -578,6 +433,150 @@ class TacotronSTFT(torch.nn.Module):
 #         self.magnitude, self.phase = self.transform(input_data)
 #         reconstruction = self.inverse(self.magnitude, self.phase)
 #         return reconstruction
+
+class TacotronSTFT(torch.nn.Module):
+    def __init__(self, filter_length=1024, hop_length=256, win_length=1024,
+                 n_mel_channels=80, sampling_rate=22050, mel_fmin=0.0,
+                 mel_fmax=8000.0):
+        super(TacotronSTFT, self).__init__()
+        self.n_mel_channels = n_mel_channels
+        self.sampling_rate = sampling_rate
+        self.stft_fn = STFT(filter_length, hop_length, win_length)
+        mel_basis = librosa_mel_fn(
+            sampling_rate, filter_length, n_mel_channels, mel_fmin, mel_fmax)
+        mel_basis = torch.from_numpy(mel_basis).float()
+        self.register_buffer('mel_basis', mel_basis)
+
+    def spectral_normalize(self, magnitudes):
+        output = dynamic_range_compression(magnitudes)
+        return output
+
+    def spectral_de_normalize(self, magnitudes):
+        output = dynamic_range_decompression(magnitudes)
+        return output
+
+    def mel_spectrogram(self, y):
+        """Computes mel-spectrograms from a batch of waves
+        PARAMS
+        ------
+        y: Variable(torch.FloatTensor) with shape (B, T) in range [-1, 1]
+
+        RETURNS
+        -------
+        mel_output: torch.FloatTensor of shape (B, n_mel_channels, T)
+        """
+        # assert(torch.min(y.data) >= -1)
+        # assert(torch.max(y.data) <= 1)
+
+        magnitudes, phases = self.stft_fn.transform(y)
+        # magnitudes = magnitudes.data
+        mel_output = torch.matmul(self.mel_basis, magnitudes)
+        mel_output = self.spectral_normalize(mel_output)
+        return mel_output
+
+
+
+class fixed_STFT(torch.nn.Module):
+    """adapted from Prem Seetharaman's https://github.com/pseeth/pytorch-stft"""
+    def __init__(self, filter_length=320, hop_length=160, win_length=320,
+                 window='hann'):
+        super(fixed_STFT, self).__init__()
+        self.filter_length = filter_length
+        self.hop_length = hop_length
+        self.win_length = win_length
+        self.window = window
+        self.forward_transform = None
+        scale = self.filter_length / self.hop_length
+        fourier_basis = np.fft.fft(np.eye(self.filter_length))
+
+        cutoff = int((self.filter_length / 2 + 1))
+        fourier_basis = np.vstack([np.real(fourier_basis[:cutoff, :]),
+                                   np.imag(fourier_basis[:cutoff, :])])
+
+        forward_basis = torch.FloatTensor(fourier_basis[:, None, :])
+        inverse_basis = torch.FloatTensor(
+            np.linalg.pinv(scale * fourier_basis).T[:, None, :])
+
+        if window is not None:
+            assert(filter_length >= win_length)
+            # get window and zero center pad it to filter_length
+            fft_window = get_window(window, win_length, fftbins=True)
+            fft_window = pad_center(fft_window, size=filter_length)
+            fft_window = torch.from_numpy(fft_window).float()
+
+            # window the bases
+            forward_basis *= fft_window
+            inverse_basis *= fft_window
+
+        self.register_buffer('forward_basis', forward_basis.float())
+        self.register_buffer('inverse_basis', inverse_basis.float())
+
+    def transform(self, input_data):
+        # num_batches = input_data.size(0)
+        # num_samples = input_data.size(1)
+
+        # self.num_samples = num_samples
+
+        # # similar to librosa, reflect-pad the input
+        # input_data = input_data.view(num_batches, 1, num_samples)
+
+        input_data = F.pad(
+            input_data.unsqueeze(1),
+            (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
+            mode='reflect')
+
+        forward_transform = F.conv1d(
+            input_data,
+            Variable(self.forward_basis, requires_grad=False),
+            stride=self.hop_length,
+            padding=0)
+
+        cutoff = int((self.filter_length / 2) + 1)
+        real_part = forward_transform[:, :cutoff, :]
+        imag_part = forward_transform[:, cutoff:, :]
+
+        magnitude = torch.sqrt(real_part**2 + imag_part**2)
+        phase = torch.autograd.Variable(
+            torch.atan2(imag_part.data, real_part.data))
+
+        return magnitude, phase
+
+    def inverse(self, magnitude, phase):
+        recombine_magnitude_phase = torch.cat(
+            [magnitude*torch.cos(phase), magnitude*torch.sin(phase)], dim=1)
+
+        inverse_transform = F.conv_transpose1d(
+            recombine_magnitude_phase,
+            Variable(self.inverse_basis, requires_grad=False),
+            stride=self.hop_length,
+            padding=0)
+
+        if self.window is not None:
+            window_sum = window_sumsquare(
+                self.window, magnitude.size(-1), hop_length=self.hop_length,
+                win_length=self.win_length, n_fft=self.filter_length,
+                dtype=np.float32)
+            # remove modulation effects
+            approx_nonzero_indices = torch.from_numpy(
+                np.where(window_sum > tiny(window_sum))[0])
+            window_sum = torch.autograd.Variable(
+                torch.from_numpy(window_sum), requires_grad=False)
+            window_sum = window_sum.cuda() if magnitude.is_cuda else window_sum
+            inverse_transform[:, :, approx_nonzero_indices] /= window_sum[approx_nonzero_indices]
+
+            # scale by hop ratio
+            inverse_transform *= float(self.filter_length) / self.hop_length
+
+        inverse_transform = inverse_transform[:, :, int(self.filter_length/2):]
+        # inverse_transform = inverse_transform[:, :, :-int(self.filter_length/2):]
+        inverse_transform = inverse_transform[:, :, :self.num_samples]
+
+        return inverse_transform
+
+    def forward(self, input_data):
+        self.magnitude, self.phase = self.transform(input_data)
+        reconstruction = self.inverse(self.magnitude, self.phase)
+        return reconstruction
 
 import torch
 import torch.nn.functional as F
@@ -588,140 +587,142 @@ import torch
 import torch.nn as nn
 from scipy.signal import get_window
 
-class fixed_STFT(nn.Module):
-    def __init__(self, n_fft=320, hop_length=160, win_length=320, window='hann'):
-        """
-        Initializes the fixed_STFT module.
-
-        Parameters
-        ----------
-        n_fft : int
-            FFT size.
-        hop_length : int
-            Number of samples between successive frames.
-        win_length : int
-            Length of the window.
-        window : str or torch.Tensor
-            Window specification. If a string is provided, a window will be generated.
-        """
-        super(fixed_STFT, self).__init__()
-        self.n_fft = n_fft
-        self.hop_length = hop_length
-        self.win_length = win_length
-        self.window = window
-        # Will be set during transform (used for ISTFT length)
-        self.num_samples = None
-
-    def _get_window(self, device, dtype):
-        """
-        Internal helper to generate a window tensor on the correct device and type.
-        """
-        if isinstance(self.window, str):
-            if self.window.lower() == 'hann':
-                # Ensure dtype is real (float32 or float64)
-                real_dtype = torch.float32 if dtype in [torch.complex64, torch.float32] else torch.float64
-                win = torch.hann_window(self.win_length, device=device, dtype=real_dtype)
-            else:
-                win_np = get_window(self.window, self.win_length, fftbins=True)
-                win = torch.tensor(win_np, device=device, dtype=dtype)
-        elif isinstance(self.window, torch.Tensor):
-            win = self.window.to(device=device, dtype=dtype)
-        else:
-            raise ValueError("window must be a string or a torch.Tensor")
-        return win
-
-    def transform(self, input_signal):
-        """
-        Computes the STFT of the input signal.
-
-        Parameters
-        ----------
-        input_signal : torch.Tensor
-            1D or 2D tensor representing the time-domain signal(s). Expected shape (T) or (B, T).
-
-        Returns
-        -------
-        magnitude : torch.Tensor
-            Magnitude of the STFT.
-        phase : torch.Tensor
-            Phase of the STFT.
-        stft_result : torch.Tensor
-            The complex STFT output.
-        """
-        # Ensure input has a batch dimension
-        if input_signal.dim() == 1:
-            input_signal = input_signal.unsqueeze(0)
-
-        # Save the original signal length for ISTFT reconstruction
-        self.num_samples = input_signal.shape[-1]
-
-        # Get the appropriate window
-        win = self._get_window(input_signal.device, input_signal.dtype)
-        # Compute the STFT (center=True pads the signal so that the frame is centered)
-        stft_result = torch.stft(
-            input_signal,
-            n_fft=self.n_fft,
-            hop_length=self.hop_length,
-            win_length=self.win_length,
-            window=win,
-            center=True,
-            return_complex=False  # Returns a complex tensor
-        )
-
-        # stft_result shape: (B, n_fft//2+1, T, 2)
-
-        return stft_result
-
-    def inverse(self, magnitude, phase):
-        """
-        Reconstructs the time-domain signal using the inverse STFT.
-
-        Parameters
-        ----------
-        magnitude : torch.Tensor
-            Magnitude of the STFT.
-        phase : torch.Tensor
-            Phase of the STFT.
-
-        Returns
-        -------
-        reconstructed_signal : torch.Tensor
-            The reconstructed time-domain signal.
-        """
-        # Recombine magnitude and phase into a complex tensor
-        stft_complex = torch.polar(magnitude, phase)
-
-        # Get the window on the same device and type as the complex tensor
-        win = self._get_window(stft_complex.device, stft_complex.dtype)
-
-        # Reconstruct the time-domain signal using ISTFT
-        reconstructed_signal = torch.istft(
-            stft_complex,
-            n_fft=self.n_fft,
-            hop_length=self.hop_length,
-            win_length=self.win_length,
-            window=win,
-            center=True,
-            length=self.num_samples  # Ensures the output matches the original length
-        )
-
-        return reconstructed_signal
-
-    def forward(self, input_signal):
-        """
-        Full forward pass: computes the STFT and then reconstructs the signal via ISTFT.
-
-        Parameters
-        ----------
-        input_signal : torch.Tensor
-            Input time-domain signal(s).
-
-        Returns
-        -------
-        reconstructed_signal : torch.Tensor
-            The reconstructed time-domain signal.
-        """
-        magnitude, phase = self.transform(input_signal)
-        reconstructed_signal = self.inverse(magnitude, phase)
-        return reconstructed_signal
+# class fixed_STFT(nn.Module):
+#     def __init__(self, n_fft=320, hop_length=160, win_length=320, window='hann'):
+#         """
+#         Initializes the fixed_STFT module.
+#
+#         Parameters
+#         ----------
+#         n_fft : int
+#             FFT size.
+#         hop_length : int
+#             Number of samples between successive frames.
+#         win_length : int
+#             Length of the window.
+#         window : str or torch.Tensor
+#             Window specification. If a string is provided, a window will be generated.
+#         """
+#         super(fixed_STFT, self).__init__()
+#         self.n_fft = n_fft
+#         self.hop_length = hop_length
+#         self.win_length = win_length
+#         self.window = window
+#         # Will be set during transform (used for ISTFT length)
+#         self.num_samples = None
+#
+#     def _get_window(self, device, dtype):
+#         """
+#         Internal helper to generate a window tensor on the correct device and type.
+#         """
+#         if isinstance(self.window, str):
+#             if self.window.lower() == 'hann':
+#                 # Ensure dtype is real (float32 or float64)
+#                 real_dtype = torch.float32 if dtype in [torch.complex64, torch.float32] else torch.float64
+#                 win = torch.hann_window(self.win_length, device=device, dtype=real_dtype)
+#             else:
+#                 win_np = get_window(self.window, self.win_length, fftbins=True)
+#                 win = torch.tensor(win_np, device=device, dtype=dtype)
+#         elif isinstance(self.window, torch.Tensor):
+#             win = self.window.to(device=device, dtype=dtype)
+#         else:
+#             raise ValueError("window must be a string or a torch.Tensor")
+#
+#         # Ensure window is correctly shaped
+#         if win.dim() != 1 or win.shape[0] != self.win_length:
+#             raise ValueError(f"Window has incorrect shape {win.shape}, expected ({self.win_length},)")
+#
+#         return win
+#
+#     def transform(self, input_signal):
+#         """
+#         Computes the STFT of the input signal.
+#
+#         Parameters
+#         ----------
+#         input_signal : torch.Tensor
+#             1D or 2D tensor representing the time-domain signal(s). Expected shape (T) or (B, T).
+#
+#         Returns
+#         -------
+#         stft_result : torch.Tensor
+#             The complex STFT output.
+#         """
+#         # Ensure input has a batch dimension
+#         if input_signal.dim() == 1:
+#             input_signal = input_signal.unsqueeze(0)
+#
+#         # Save the original signal length for ISTFT reconstruction
+#         self.num_samples = input_signal.shape[-1]
+#
+#         # Apply reflect padding before STFT
+#         x_padded = F.pad(input_signal.unsqueeze(1), (self.n_fft // 2, self.n_fft // 2), mode='reflect').squeeze(1)
+#         # Get the appropriate window
+#         win = self._get_window(input_signal.device, input_signal.dtype)
+#
+#         stft_result = torch.stft(
+#             x_padded,
+#             n_fft=self.n_fft,
+#             hop_length=self.hop_length,
+#             win_length=self.win_length,
+#             window=win,
+#             center=False,
+#             return_complex=False  # Returns a complex tensor
+#         )
+#         # stft_result shape: (B, n_fft//2+1, T, 2)
+#         return stft_result
+#
+#     def inverse(self, magnitude, phase):
+#         """
+#         Reconstructs the time-domain signal using the inverse STFT.
+#
+#         Parameters
+#         ----------
+#         magnitude : torch.Tensor
+#             Magnitude of the STFT.
+#         phase : torch.Tensor
+#             Phase of the STFT.
+#
+#         Returns
+#         -------
+#         reconstructed_signal : torch.Tensor
+#             The reconstructed time-domain signal.
+#         """
+#         # Recombine magnitude and phase into a complex tensor
+#         stft_complex = torch.polar(magnitude, phase)
+#
+#         # Get the window on the same device and type as the complex tensor
+#         win = self._get_window(stft_complex.device, stft_complex.dtype)
+#
+#         # Reconstruct the time-domain signal using ISTFT
+#         reconstructed_signal = torch.istft(
+#             stft_complex,
+#             n_fft=self.n_fft,
+#             hop_length=self.hop_length,
+#             win_length=self.win_length,
+#             window=win,
+#             center=False
+#         )
+#
+#         if reconstructed_signal.shape[-1] > self.num_samples:
+#             reconstructed_signal = reconstructed_signal[:, :self.num_samples]
+#         return reconstructed_signal
+#
+#     def forward(self, input_signal):
+#         """
+#         Full forward pass: computes the STFT and then reconstructs the signal via ISTFT.
+#
+#         Parameters
+#         ----------
+#         input_signal : torch.Tensor
+#             Input time-domain signal(s).
+#
+#         Returns
+#         -------
+#         reconstructed_signal : torch.Tensor
+#             The reconstructed time-domain signal.
+#         """
+#         magnitude, phase = self.transform(input_signal)
+#         reconstructed_signal = self.inverse(magnitude, phase)
+#         return reconstructed_signal
 
