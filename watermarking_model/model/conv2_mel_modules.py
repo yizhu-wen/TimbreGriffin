@@ -231,7 +231,7 @@ class Decoder(nn.Module):
         win_dim = int((process_config["mel"]["n_fft"] / 2) + 1)
         self.hop_length = process_config["mel"]["hop_length"]
         self.block = model_config["conv2"]["block"]
-        self.EX = WatermarkExtracter(input_channel=1, hidden_dim=model_config["conv2"]["hidden_dim"], block=self.block)
+        self.EX = WatermarkExtracter(input_channel=2, hidden_dim=model_config["conv2"]["hidden_dim"], block=self.block)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
         self.msg_linear_out = FCBlock(win_dim, msg_length)
 
@@ -248,20 +248,20 @@ class Decoder(nn.Module):
             y_d_d = self.dl(y_d, self.robust)
         else:
             y_d_d = y_d
-        spect, phase, _ = self.stft.transform(y_d_d)
-        extracted_wm = self.EX(spect.unsqueeze(1)).squeeze(1)
+        spect, phase, stft_result = self.stft.transform(y_d_d)
+        extracted_wm = self.EX(stft_result).squeeze(1)
         msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
         msg = self.msg_linear_out(msg)
 
-        spect_identity, phase_identity = self.stft.transform(y_identity)
-        extracted_wm_identity = self.EX(spect_identity.unsqueeze(1)).squeeze(1)
+        spect_identity, phase_identity, stft_result = self.stft.transform(y_identity)
+        extracted_wm_identity = self.EX(stft_result).squeeze(1)
         msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
         msg_identity = self.msg_linear_out(msg_identity)
         return msg, msg_identity
     
     def test_forward(self, y):
-        spect, phase = self.stft.transform(y)
-        extracted_wm = self.EX(spect.unsqueeze(1)).squeeze(1)
+        spect, phase, stft_result= self.stft.transform(y)
+        extracted_wm = self.EX(stft_result).squeeze(1)
         msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
         msg = self.msg_linear_out(msg)
         return msg
@@ -295,7 +295,7 @@ class Discriminator(nn.Module):
     def __init__(self, process_config):
         super(Discriminator, self).__init__()
         self.conv = nn.Sequential(
-                ReluBlock(1,16,3,1,1),
+                ReluBlock(2,16,3,1,1),
                 ReluBlock(16,32,3,1,1),
                 ReluBlock(32,64,3,1,1),
                 nn.AdaptiveAvgPool2d(output_size=(1, 1))
@@ -304,9 +304,8 @@ class Discriminator(nn.Module):
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
 
     def forward(self, x):
-        spect, phase = self.stft.transform(x)
-        x = spect.unsqueeze(1)
-        x = self.conv(x)
+        spect, phase, stft_result = self.stft.transform(x)
+        x = self.conv(stft_result)
         x = x.squeeze(2).squeeze(2)
         x = self.linear(x)
         return x
