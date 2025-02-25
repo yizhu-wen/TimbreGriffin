@@ -248,7 +248,7 @@ class Decoder(nn.Module):
             y_d_d = self.dl(y_d, self.robust)
         else:
             y_d_d = y_d
-        spect, phase = self.stft.transform(y_d_d)
+        spect, phase, _ = self.stft.transform(y_d_d)
         extracted_wm = self.EX(spect.unsqueeze(1)).squeeze(1)
         msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
         msg = self.msg_linear_out(msg)
