@@ -98,7 +98,7 @@ class Encoder(nn.Module):
         self.add_carrier_noise = False
         self.block = model_config["conv2"]["block"]
         self.layers_CE = model_config["conv2"]["layers_CE"]
-        self.EM_input_dim = model_config["conv2"]["hidden_dim"] + 2
+        self.EM_input_dim = model_config["conv2"]["hidden_dim"] + 3
         self.layers_EM = model_config["conv2"]["layers_EM"]
         self.future_amt = train_config["watermark"]["future_amt"]
         self.future = True
@@ -110,7 +110,7 @@ class Encoder(nn.Module):
         #stft transform
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
 
-        self.ENc = Conv2Encoder(input_channel=1, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_CE)
+        self.ENc = Conv2Encoder(input_channel=2, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_CE)
 
         self.EM = WatermarkEmbedder(input_channel=self.EM_input_dim, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_EM)
 
@@ -138,7 +138,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, msg, global_step):
         num_samples = x.shape[-1]
-        spect, phase = self.stft.transform(x)
+        spect, _, stft_result = self.stft.transform(x)
         B, freq_bin, time_frames = spect.shape  # [B, freq_bin, time_frames]
         spect = spect.unsqueeze(1)
         # Evaluate how many chunks we can process
@@ -155,7 +155,7 @@ class Encoder(nn.Module):
 
         list_of_watermarks = []
         for i in range(int((time_frames - (voice_prefilling + self.future_amt))/(self.future_amt+1))):
-            carrier_encoded = self.ENc(spect[:, :, :, i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)])
+            carrier_encoded = self.ENc(stft_result[:, :, :, i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)])
             # torch.Size([B, 1, 161])
             # torch.Size([B, 161, 1])
             # torch.Size([B, 1, 161, 1])
@@ -163,8 +163,9 @@ class Encoder(nn.Module):
             watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 1,
                                                                                             carrier_encoded.shape[3])
 
-            concatenated_feature = torch.cat((carrier_encoded, spect[:, :, :, i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)], watermark_encoded), dim=1)
-
+            concatenated_feature = torch.cat((carrier_encoded, stft_result[:, :, :,
+                                                               i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)], watermark_encoded), dim=1)
+            # [B, 2, bins, length]
             # Embed the watermark
             carrier_watermarked = self.EM(concatenated_feature)
             # Append both the watermark chunk and the pilot segment
@@ -180,7 +181,13 @@ class Encoder(nn.Module):
 
             self.stft.num_samples = num_samples
 
-            y = self.stft.inverse(all_watermark_stft.squeeze(1), phase).squeeze(1)
+            # Compute the magnitude (spect)
+            spect = torch.sqrt(stft_result[:, 0, :, :] ** 2 + stft_result[:, 1, :, :] ** 2)
+
+            # Compute the phase using arctan2
+            phase = torch.atan2(stft_result[:, 1, :, :], stft_result[:, 0, :, :])
+
+            y = self.stft.inverse(spect, phase).squeeze(1)
 
             return y, all_watermark_stft
         else:

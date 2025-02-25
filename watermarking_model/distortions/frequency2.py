@@ -535,11 +535,14 @@ class fixed_STFT(torch.nn.Module):
         real_part = forward_transform[:, :cutoff, :]
         imag_part = forward_transform[:, cutoff:, :]
 
+        # Create stft_result with shape [b, 2, fre_bins, frame]
+        stft_result = torch.stack([real_part, imag_part], dim=1)
+
         magnitude = torch.sqrt(real_part**2 + imag_part**2)
         phase = torch.autograd.Variable(
             torch.atan2(imag_part.data, real_part.data))
 
-        return magnitude, phase
+        return magnitude, phase, stft_result
 
     def inverse(self, magnitude, phase):
         recombine_magnitude_phase = torch.cat(
@@ -574,7 +577,7 @@ class fixed_STFT(torch.nn.Module):
         return inverse_transform
 
     def forward(self, input_data):
-        self.magnitude, self.phase = self.transform(input_data)
+        self.magnitude, self.phase, self.stft_result = self.transform(input_data)
         reconstruction = self.inverse(self.magnitude, self.phase)
         return reconstruction
 

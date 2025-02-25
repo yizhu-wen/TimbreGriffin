@@ -310,7 +310,7 @@ class WatermarkEmbedder(nn.Module):
         )
         #########################
 
-        layers.append(core(c_in=hidden_dim, c_out=1, kernel_size=1, stride=1, padding=0))
+        layers.append(core(c_in=hidden_dim, c_out=2, kernel_size=1, stride=1, padding=0))
 
         self.main = nn.Sequential(*layers)
 
