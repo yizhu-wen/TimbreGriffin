@@ -16,7 +16,7 @@ from torch.nn.functional import mse_loss
 from dataset.data import collate_fn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import StepLR
-from model.conv2_mel_modules import Encoder, Decoder, Discriminator
+from model.conv2_mel_modules import Encoder, Decoder, Discriminator, save_waveform
 from dataset.data import WavDataset as MyDataset
 import random
 import shutil
@@ -435,6 +435,9 @@ def main(configs):
             test_avg_msg_loss += losses[1]
             test_avg_d_loss_on_cover += d_loss_on_cover
             test_avg_d_loss_on_encoded += d_loss_on_encoded
+
+        save_waveform(wav_matrix[-1], flag="original")
+        save_waveform(encoded[-1], flag="watermarked")
         test_avg_acc[0] /= count
         test_avg_acc[1] /= count
         test_avg_snr /= count

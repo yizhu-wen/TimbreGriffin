@@ -20,12 +20,12 @@ def save_spectrum(spect, phase, flag='linear'):
     import matplotlib.pyplot as plt
     spect = spect/torch.max(torch.abs(spect))
     spec = librosa.amplitude_to_db(spect.squeeze(0).cpu().numpy(), ref=np.max, amin=1e-5)
-    img=librosa.display.specshow(spec, sr=22050, x_axis='time', y_axis='log', y_coords=None);
+    img=librosa.display.specshow(spec, sr=16000, x_axis='time', y_axis='log', y_coords=None);
     plt.axis('off')
     plt.savefig(os.path.join(root, flag + '_amplitude_spectrogram.png'), bbox_inches='tight', pad_inches=0.0)
     phase = phase/torch.max(torch.abs(phase))
     spec = librosa.amplitude_to_db(phase.squeeze(0).cpu().numpy(), ref=np.max, amin=1e-5)
-    img=librosa.display.specshow(spec, sr=22050, x_axis='time', y_axis='log', y_coords=None);
+    img=librosa.display.specshow(spec, sr=16000, x_axis='time', y_axis='log', y_coords=None);
     plt.clim(-40, 40)
     plt.axis('off')
     plt.savefig(os.path.join(root, flag + '_phase_spectrogram.png'), bbox_inches='tight', pad_inches=0.0)
@@ -179,17 +179,18 @@ class Encoder(nn.Module):
             )
             mask=spect!=0
 
-            # scalar = 1.0  # Adjust if necessary
-            # all_watermark_stft = self.power * torch.unsqueeze(scalar.cuda(), dim=1) * all_watermark_stft
+            scalar = 1.0  # Adjust if necessary
+            all_watermark_stft = self.power * torch.unsqueeze(scalar.cuda(), dim=1) * all_watermark_stft
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
+            final_watermarked_stft = all_watermark_stft + stft_result
 
             self.stft.num_samples = num_samples
 
             # Compute the magnitude (spect)
-            spect = torch.sqrt(all_watermark_stft[:, 0, :, :] ** 2 + all_watermark_stft[:, 1, :, :] ** 2)
+            spect = torch.sqrt(final_watermarked_stft[:, 0, :, :] ** 2 + final_watermarked_stft[:, 1, :, :] ** 2)
 
             # Compute the phase using arctan2
-            phase = torch.atan2(all_watermark_stft[:, 1, :, :], all_watermark_stft[:, 0, :, :])
+            phase = torch.atan2(final_watermarked_stft[:, 1, :, :], final_watermarked_stft[:, 0, :, :])
 
             y = self.stft.inverse(spect, phase).squeeze(1)
 
@@ -197,27 +198,6 @@ class Encoder(nn.Module):
         else:
             print("Not enough watermarking!!!!")
             return None
-
-    
-    # def save_forward(self, x, msg):
-    #     num_samples = x.shape[2]
-    #     save_waveform(x.squeeze())
-    #     spect, phase = self.stft.transform(x)
-    #     # save spectrum
-    #     save_spectrum(spect, phase, 'linear')
-    #
-    #     carrier_encoded = self.ENc(spect.unsqueeze(1))
-    #     # save feature_map
-    #     # save_feature_map(carrier_encoded[0])
-    #     watermark_encoded = self.msg_linear_in(msg).transpose(1,2).unsqueeze(1).repeat(1,1,1,carrier_encoded.shape[3])
-    #     concatenated_feature = torch.cat((carrier_encoded, spect.unsqueeze(1), watermark_encoded), dim=1)
-    #     carrier_wateramrked = self.EM(concatenated_feature)
-    #     save_spectrum(carrier_wateramrked.squeeze(1), phase, 'wmed_linear')
-    #
-    #     self.stft.num_samples = num_samples
-    #     y = self.stft.inverse(carrier_wateramrked.squeeze(1), phase.squeeze(1))
-    #     save_waveform(y.squeeze().squeeze(), 'wmed')
-    #     return y, carrier_wateramrked
 
 
 
@@ -269,30 +249,6 @@ class Decoder(nn.Module):
         msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
         msg = self.msg_linear_out(msg)
         return msg
-    
-    # def save_forward(self, y):
-    #     # save mel_spectrum
-    #     y_mel = self.mel_transform.mel_spectrogram(y.squeeze(1))
-    #     save_spectrum(y_mel, y_mel, 'mel')
-    #     y, reconstruct_spec = self.mel_transform.griffin_lim(magnitudes=y_mel)
-    #     y = y.unsqueeze(1)
-    #     save_waveform(y.squeeze().squeeze(), 'distored')
-    #     save_spectrum(reconstruct_spec, reconstruct_spec, 'recon')
-    #     # y = (self.mel_transform.griffin_lim(magnitudes=y_mel)).unsqueeze(1)
-    #     spect, phase = self.stft.transform(y)
-    #     save_spectrum(spect, spect, 'distored')
-    #     pdb.set_trace()
-    #     extracted_wm = self.EX(spect.unsqueeze(1)).squeeze(1)
-    #     msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
-    #     msg = self.msg_linear_out(msg)
-    #     return msg
-    
-    # def mel_test_forward(self, spect):
-    #     extracted_wm = self.EX(spect.unsqueeze(1)).squeeze(1)
-    #     msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
-    #     msg = self.msg_linear_out(msg)
-    #     return msg
-        
 
 
 class Discriminator(nn.Module):
