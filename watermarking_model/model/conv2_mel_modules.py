@@ -182,7 +182,7 @@ class Encoder(nn.Module):
             # scalar = 1.0  # Adjust if necessary
             # all_watermark_stft = self.power * torch.unsqueeze(scalar.cuda(), dim=1) * all_watermark_stft
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
-            all_watermark_stft = all_watermark_stft + stft_result
+            # all_watermark_stft = all_watermark_stft + stft_result
 
             self.stft.num_samples = num_samples
 
