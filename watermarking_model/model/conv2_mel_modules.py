@@ -179,18 +179,18 @@ class Encoder(nn.Module):
             )
             mask=spect!=0
 
-            scalar = 1.0  # Adjust if necessary
-            all_watermark_stft = self.power * torch.unsqueeze(scalar.cuda(), dim=1) * all_watermark_stft
+            # scalar = 1.0  # Adjust if necessary
+            # all_watermark_stft = self.power * torch.unsqueeze(scalar.cuda(), dim=1) * all_watermark_stft
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
-            final_watermarked_stft = all_watermark_stft + stft_result
+            # all_watermark_stft = all_watermark_stft + stft_result
 
             self.stft.num_samples = num_samples
 
             # Compute the magnitude (spect)
-            spect = torch.sqrt(final_watermarked_stft[:, 0, :, :] ** 2 + final_watermarked_stft[:, 1, :, :] ** 2)
+            spect = torch.sqrt(all_watermark_stft[:, 0, :, :] ** 2 + all_watermark_stft[:, 1, :, :] ** 2)
 
             # Compute the phase using arctan2
-            phase = torch.atan2(final_watermarked_stft[:, 1, :, :], final_watermarked_stft[:, 0, :, :])
+            phase = torch.atan2(all_watermark_stft[:, 1, :, :], all_watermark_stft[:, 0, :, :])
 
             y = self.stft.inverse(spect, phase).squeeze(1)
 
