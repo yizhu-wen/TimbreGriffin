@@ -6,12 +6,44 @@ import julius
 from audiomentations import Compose, Mp3Compression
 import kornia
 from distortions.frequency2 import fixed_STFT
+from functools import partial
+import typing as tp
+from omegaconf import DictConfig
 
 SAMPLE_RATE = 16000
+
+# def get_encodec_audio_effect(encodec_cfg: DictConfig, sr: int) -> tp.Dict:
+#     """
+#     Construct encodec-based compression data agumentation. This method is
+#     is put here instead of in `audiocraft.utils.audio_effects` because
+#     it depends on the package `audiocraft.solvers`, which is one layer
+#     higher than `audiocraft.utils`, so we avoid the circle dependency
+#     from any solvers using `audiocraft.utils.audio_effects` to do the
+#     augmentation
+#     """
+#     from ..solvers.compression import CompressionSolver
+#
+#     codec_model = CompressionSolver.model_from_checkpoint(encodec_cfg.ckpt)
+#     codec_model.train()
+#     return {
+#         f"encodec_nq={n_q}": partial(
+#             compress_with_encodec,
+#             model=codec_model,
+#             n_q=n_q,
+#             sample_rate=sr,
+#         )
+#         for n_q in encodec_cfg.n_qs
+#     }
+
+
+
+
+
+
 class distortion(nn.Module):
     def __init__(self, process_config, ):
         super(distortion, self).__init__()
-        self.device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.resample_kernel1 = julius.ResampleFrac(SAMPLE_RATE, 16000).to(self.device)
         self.resample_kernel1_re = julius.ResampleFrac(16000, SAMPLE_RATE).to(self.device)
         self.resample_kernel2 = julius.ResampleFrac(SAMPLE_RATE, 8000).to(self.device)

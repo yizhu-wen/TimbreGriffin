@@ -102,6 +102,7 @@ class Encoder(nn.Module):
         self.layers_EM = model_config["conv2"]["layers_EM"]
         self.future_amt = train_config["watermark"]["future_amt"]
         self.future = True
+        self.power = 1.0
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
@@ -177,15 +178,18 @@ class Encoder(nn.Module):
                 spect, watermark
             )
             mask=spect!=0
+
+            # scalar = 1.0  # Adjust if necessary
+            # all_watermark_stft = self.power * torch.unsqueeze(scalar.cuda(), dim=1) * all_watermark_stft
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
 
             self.stft.num_samples = num_samples
 
             # Compute the magnitude (spect)
-            spect = torch.sqrt(stft_result[:, 0, :, :] ** 2 + stft_result[:, 1, :, :] ** 2)
+            spect = torch.sqrt(all_watermark_stft[:, 0, :, :] ** 2 + all_watermark_stft[:, 1, :, :] ** 2)
 
             # Compute the phase using arctan2
-            phase = torch.atan2(stft_result[:, 1, :, :], stft_result[:, 0, :, :])
+            phase = torch.atan2(all_watermark_stft[:, 1, :, :], all_watermark_stft[:, 0, :, :])
 
             y = self.stft.inverse(spect, phase).squeeze(1)
 
@@ -248,13 +252,13 @@ class Decoder(nn.Module):
             y_d_d = self.dl(y_d, self.robust)
         else:
             y_d_d = y_d
-        spect, phase, stft_result = self.stft.transform(y_d_d)
+        _, _, stft_result = self.stft.transform(y_d_d)
         extracted_wm = self.EX(stft_result).squeeze(1)
         msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
         msg = self.msg_linear_out(msg)
 
-        spect_identity, phase_identity, stft_result = self.stft.transform(y_identity)
-        extracted_wm_identity = self.EX(stft_result).squeeze(1)
+        _, _, stft_result_identity = self.stft.transform(y_identity)
+        extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
         msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
         msg_identity = self.msg_linear_out(msg_identity)
         return msg, msg_identity
@@ -304,7 +308,7 @@ class Discriminator(nn.Module):
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
 
     def forward(self, x):
-        spect, phase, stft_result = self.stft.transform(x)
+        _, _, stft_result = self.stft.transform(x)
         x = self.conv(stft_result)
         x = x.squeeze(2).squeeze(2)
         x = self.linear(x)
