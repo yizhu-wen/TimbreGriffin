@@ -300,7 +300,7 @@ def main(configs):
             if step % show_circle == 0:
                 logging.info('-' * 100)
                 logging.info("step:{} - wav_loss:{:.8f} - msg_loss:{:.8f} - tfloudness_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - norm:{:.8f} - patch_num:{} - pad_num:{} - wav_len:{} ".format(
-                    step, losses[0], losses[1], losses[2], decoder_acc[1],
+                    step, losses[0], losses[1], losses[2], decoder_acc[0], decoder_acc[1],
                     snr, norm2, sample["patch_num"].tolist(), sample["pad_num"].tolist(), wav_matrix.shape[-1], d_loss_on_encoded.item(), d_loss_on_cover.item()))
 
         train_avg_acc[0] /= step
@@ -391,7 +391,7 @@ def main(configs):
             val_avg_d_loss_on_cover /= count
             logging.info('#e' * 60)
             logging.info("epoch:{} - wav_loss:{:.8f} - msg_loss:{:.8f} - tfloudness_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - d_loss_on_encoded:{} - d_loss_on_cover:{}".format(
-                ep, val_avg_wav_loss, val_avg_msg_loss, val_avg_loudness_loss,val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded.item(), val_avg_d_loss_on_cover.item()))
+                ep, val_avg_wav_loss, val_avg_msg_loss, val_avg_loudness_loss,val_avg_acc[0], val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded.item(), val_avg_d_loss_on_cover.item()))
         val_metrics = {
             "val/wav_loss": val_avg_wav_loss,
             "val/msg_loss": val_avg_msg_loss,
