@@ -455,6 +455,7 @@ def main(configs):
 
         save_waveform(wav_matrix[-1], flag="original")
         save_waveform(y_wm[-1], flag="watermarked")
+        save_waveform(y_wm[-1] - wav_matrix[-1], flag="watermark")
         test_avg_acc[0] /= count
         test_avg_acc[1] /= count
         test_avg_snr /= count

@@ -128,7 +128,7 @@ class Loss_identity(nn.Module):
         super(Loss_identity, self).__init__()
         self.msg_loss = nn.MSELoss()
         self.embedding_loss = nn.MSELoss()
-        self.tfloudness_loss = TFLoudnessRatio(n_bands=15)
+        self.tfloudness_loss = TFLoudnessRatio(n_bands=16)
     
     def en_de_loss(self, x, w_x, msg, rec_msg):
         embedding_loss = self.embedding_loss(x, w_x)
