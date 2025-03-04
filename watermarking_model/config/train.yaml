@@ -15,7 +15,6 @@ path:
 
 watermark:
   length: 10
-  future_amt: 51
   future_amt_waveform: 8000
 
 
@@ -44,7 +43,7 @@ optimize:
 
 
 iter:
-  epoch: 20
+  epoch: 1
   # epoch: 100
   save_circle: 5
   show_circle: 100

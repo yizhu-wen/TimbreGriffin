@@ -235,17 +235,19 @@ class Decoder(nn.Module):
             y_d_d = y_d
         _, _, stft_result = self.stft.transform(y_d_d)
         extracted_wm = self.EX(stft_result).squeeze(1)
-        msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
-        msg = msg.reshape(-1, 1, 2, self.win_dim//2)  # [2, 1, 2, 81]
-        msg = msg.mean(dim=2)  # [2, 1, 81]
-        msg = self.msg_linear_out(msg)
+        msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)  # mean average, collapse the time dimension
+        # Explicitly split the 162-dim vector into two halves of 81-dim each
+        low, high = msg.chunk(2, dim=-1)  # each has shape [B, 1, 81]
+        msg_avg = (low + high) / 2  # Average the two halves -> shape: [B, 1, 81]
+        msg = self.msg_linear_out(msg_avg)
 
         _, _, stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
         msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
-        msg_identity = msg_identity.reshape(-1, 1, 2, self.win_dim//2)  # [2, 1, 2, 81]
-        msg_identity = msg_identity.mean(dim=2)  # [2, 1, 81]
-        msg_identity = self.msg_linear_out(msg_identity)
+        # Explicitly split the 162-dim vector into two halves of 81-dim each
+        low_identity, high_identity = msg.chunk(2, dim=-1)  # each has shape [B, 1, 81]
+        msg_avg_identity = (low_identity + high_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
+        msg_identity = self.msg_linear_out(msg_avg_identity)
         return msg, msg_identity
     
     def test_forward(self, y):
