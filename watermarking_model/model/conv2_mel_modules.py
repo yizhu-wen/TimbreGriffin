@@ -94,19 +94,23 @@ class Encoder(nn.Module):
     def __init__(self, process_config, model_config, train_config, msg_length):
         super(Encoder, self).__init__()
         self.name = "conv2"
-        win_dim = int((process_config["mel"]["n_fft"] / 2) + 1)
+        self.win_dim = int((process_config["mel"]["n_fft"] / 2) + 1)
         self.add_carrier_noise = False
         self.block = model_config["conv2"]["block"]
         self.layers_CE = model_config["conv2"]["layers_CE"]
         self.EM_input_dim = model_config["conv2"]["hidden_dim"] + 3
         self.layers_EM = model_config["conv2"]["layers_EM"]
-        self.future_amt = train_config["watermark"]["future_amt"]
+        self.n_fft = process_config["mel"]["n_fft"]
+        self.hop_length = process_config["mel"]["hop_length"]
+        self.win_length = process_config["mel"]["win_length"]
+        self.sampling_rate = process_config["audio"]["or_sample_rate"]
+        self.future_amt = train_config["watermark"]["future_amt_waveform"] // self.hop_length + 1
         self.future = True
         self.power = 1.0
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
-        self.msg_linear_in = FCBlock(msg_length, win_dim, activation=LeakyReLU(inplace=False))
+        self.msg_linear_in = FCBlock(msg_length, self.win_dim//2, activation=LeakyReLU(inplace=False))
 
         #stft transform
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
@@ -146,7 +150,7 @@ class Encoder(nn.Module):
         # 2s input + 0.05s calculation delay
         # 2.05*16000 = 32800
         # 32800 // hop_length + 1 = 206 center=True
-        voice_prefilling = 206
+        voice_prefilling = int((2.05*self.sampling_rate)//self.hop_length + 1)
         # Predict future 0.5s watermark
         # 0.5*16000 = 8000
         # 8000 // hop_length + 1 =51
@@ -157,11 +161,11 @@ class Encoder(nn.Module):
         list_of_watermarks = []
         for i in range(int((time_frames - (voice_prefilling + self.future_amt))/(self.future_amt+1))):
             carrier_encoded = self.ENc(stft_result[:, :, :, i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)])
-            # torch.Size([B, 1, 161])
-            # torch.Size([B, 161, 1])
-            # torch.Size([B, 1, 161, 1])
-            # torch.Size([B, 1, 161, 206])
-            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 1,
+            # torch.Size([B, 1, 81])
+            # torch.Size([B, 81, 1])
+            # torch.Size([B, 1, 81, 1])
+            # torch.Size([B, 1, 162, 206])
+            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 2,
                                                                                             carrier_encoded.shape[3])
 
             concatenated_feature = torch.cat((carrier_encoded, stft_result[:, :, :,
@@ -177,12 +181,9 @@ class Encoder(nn.Module):
             all_watermark_stft = self.pad_w_zero_stft(
                 spect, watermark
             )
-            mask=spect!=0
 
-            # scalar = 1.0  # Adjust if necessary
-            # all_watermark_stft = self.power * torch.unsqueeze(scalar.cuda(), dim=1) * all_watermark_stft
-            all_watermark_stft = all_watermark_stft*mask + 0.0000001
-            # all_watermark_stft = all_watermark_stft + stft_result
+            # mask=spect!=0
+            # all_watermark_stft = all_watermark_stft*mask + 0.0000001
 
             self.stft.num_samples = num_samples
 
@@ -212,12 +213,12 @@ class Decoder(nn.Module):
         # self.vocoder = get_vocoder(device)
         # self.vocoder_step = model_config["structure"]["vocoder_step"]
 
-        win_dim = int((process_config["mel"]["n_fft"] / 2) + 1)
+        self.win_dim = int((process_config["mel"]["n_fft"] / 2) + 1)
         self.hop_length = process_config["mel"]["hop_length"]
         self.block = model_config["conv2"]["block"]
         self.EX = WatermarkExtracter(input_channel=2, hidden_dim=model_config["conv2"]["hidden_dim"], block=self.block)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
-        self.msg_linear_out = FCBlock(win_dim, msg_length)
+        self.msg_linear_out = FCBlock(self.win_dim//2, msg_length)
 
     def forward(self, y, global_step):
         y_identity = y.clone()
@@ -235,11 +236,15 @@ class Decoder(nn.Module):
         _, _, stft_result = self.stft.transform(y_d_d)
         extracted_wm = self.EX(stft_result).squeeze(1)
         msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
+        msg = msg.reshape(-1, 1, 2, self.win_dim//2)  # [2, 1, 2, 81]
+        msg = msg.mean(dim=2)  # [2, 1, 81]
         msg = self.msg_linear_out(msg)
 
         _, _, stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
         msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
+        msg_identity = msg_identity.reshape(-1, 1, 2, self.win_dim//2)  # [2, 1, 2, 81]
+        msg_identity = msg_identity.mean(dim=2)  # [2, 1, 81]
         msg_identity = self.msg_linear_out(msg_identity)
         return msg, msg_identity
     

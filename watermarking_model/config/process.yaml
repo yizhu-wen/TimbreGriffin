@@ -15,6 +15,6 @@ audio:
 #  win_length: 1024
 
 mel:
-  n_fft: 320
+  n_fft: 322
   hop_length: 160
-  win_length: 320
+  win_length: 322
