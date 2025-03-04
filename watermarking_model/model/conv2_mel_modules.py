@@ -245,7 +245,7 @@ class Decoder(nn.Module):
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
         msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
         # Explicitly split the 162-dim vector into two halves of 81-dim each
-        low_identity, high_identity = msg.chunk(2, dim=-1)  # each has shape [B, 1, 81]
+        low_identity, high_identity = msg_identity.chunk(2, dim=-1)  # each has shape [B, 1, 81]
         msg_avg_identity = (low_identity + high_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
         msg_identity = self.msg_linear_out(msg_avg_identity)
         return msg, msg_identity
