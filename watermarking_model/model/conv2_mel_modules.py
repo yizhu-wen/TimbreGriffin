@@ -165,9 +165,8 @@ class Encoder(nn.Module):
             # torch.Size([B, 81, 1])
             # torch.Size([B, 1, 81, 1])
             # torch.Size([B, 1, 162, 206])
-            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 2,
+            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 1,
                                                                                             carrier_encoded.shape[3])
-
             concatenated_feature = torch.cat((carrier_encoded, stft_result[:, :, :,
                                                                i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)], watermark_encoded), dim=1)
             # [B, 2, bins, length]
