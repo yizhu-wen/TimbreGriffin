@@ -110,7 +110,7 @@ class Encoder(nn.Module):
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
-        self.msg_linear_in = FCBlock(msg_length, self.win_dim//2, activation=LeakyReLU(inplace=False))
+        self.msg_linear_in = FCBlock(msg_length, self.win_dim, activation=LeakyReLU(inplace=False))
 
         #stft transform
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
@@ -181,9 +181,8 @@ class Encoder(nn.Module):
             all_watermark_stft = self.pad_w_zero_stft(
                 spect, watermark
             )
-
-            # mask=spect!=0
-            # all_watermark_stft = all_watermark_stft*mask + 0.0000001
+            mask=spect!=0
+            all_watermark_stft = all_watermark_stft*mask + 0.0000001
 
             self.stft.num_samples = num_samples
 
@@ -218,7 +217,7 @@ class Decoder(nn.Module):
         self.block = model_config["conv2"]["block"]
         self.EX = WatermarkExtracter(input_channel=2, hidden_dim=model_config["conv2"]["hidden_dim"], block=self.block)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
-        self.msg_linear_out = FCBlock(self.win_dim//2, msg_length)
+        self.msg_linear_out = FCBlock(self.win_dim, msg_length)
 
     def forward(self, y, global_step):
         y_identity = y.clone()
@@ -235,19 +234,19 @@ class Decoder(nn.Module):
             y_d_d = y_d
         _, _, stft_result = self.stft.transform(y_d_d)
         extracted_wm = self.EX(stft_result).squeeze(1)
-        msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)  # mean average, collapse the time dimension
-        # Explicitly split the 162-dim vector into two halves of 81-dim each
-        low, high = msg.chunk(2, dim=-1)  # each has shape [B, 1, 81]
-        msg_avg = (low + high) / 2  # Average the two halves -> shape: [B, 1, 81]
-        msg = self.msg_linear_out(msg_avg)
+        msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
+        # # Explicitly split the 162-dim vector into two halves of 81-dim each
+        # low, high = msg.chunk(2, dim=-1)  # each has shape [B, 1, 81]
+        # msg_avg = (low + high) / 2  # Average the two halves -> shape: [B, 1, 81]
+        msg = self.msg_linear_out(msg)
 
         _, _, stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
         msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
-        # Explicitly split the 162-dim vector into two halves of 81-dim each
-        low_identity, high_identity = msg_identity.chunk(2, dim=-1)  # each has shape [B, 1, 81]
-        msg_avg_identity = (low_identity + high_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
-        msg_identity = self.msg_linear_out(msg_avg_identity)
+        # # Explicitly split the 162-dim vector into two halves of 81-dim each
+        # low_identity, high_identity = msg_identity.chunk(2, dim=-1)  # each has shape [B, 1, 81]
+        # msg_avg_identity = (low_identity + high_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
+        msg_identity = self.msg_linear_out(msg_identity)
         return msg, msg_identity
     
     def test_forward(self, y):
