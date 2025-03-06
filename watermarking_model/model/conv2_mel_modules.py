@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.nn import LeakyReLU
 from .blocks import FCBlock, Conv2Encoder, WatermarkEmbedder, WatermarkExtracter, ReluBlock
 from distortions.frequency2 import fixed_STFT
+from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
+
 # from distortions.dl import distortion
 
 
@@ -107,6 +109,8 @@ class Encoder(nn.Module):
         self.future_amt = train_config["watermark"]["future_amt_waveform"] // self.hop_length + 1
         self.future = True
         self.power = 1.0
+        self.vad = load_silero_vad()
+        self.vad_threshold = 0.50
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
@@ -119,7 +123,7 @@ class Encoder(nn.Module):
 
         self.EM = WatermarkEmbedder(input_channel=self.EM_input_dim, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_EM)
 
-    def pad_w_zero_stft(self, input_stft, watermark_stft):
+    def pad_w_zero_stft(self, input_stft, watermark_stft, voice_prefilling):
         """
         Pad the watermarked stft output with zeros on the left + right,
         respecting future_amt and chunk-based offsets.
@@ -127,7 +131,7 @@ class Encoder(nn.Module):
         B, C, F, T_in = input_stft.shape
         _, c, _, t_in = watermark_stft.shape
         T_wm = watermark_stft.shape[3]
-        chunk_size = 206 if not self.future else (206 + self.future_amt)
+        chunk_size = voice_prefilling if not self.future else (voice_prefilling + self.future_amt)
 
         zeros_right_len = T_in - T_wm - chunk_size
         if zeros_right_len < 0:
@@ -178,7 +182,7 @@ class Encoder(nn.Module):
         if len(list_of_watermarks) > 0:
             watermark = torch.cat(list_of_watermarks, dim=-1)
             all_watermark_stft = self.pad_w_zero_stft(
-                spect, watermark
+                spect, watermark, voice_prefilling
             )
             mask=spect!=0
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
@@ -193,7 +197,25 @@ class Encoder(nn.Module):
 
             y = self.stft.inverse(spect, phase).squeeze(1)
 
-            return y, all_watermark_stft
+            # Get chunk-level speech probabilities for the batch.
+            # The output shape should be [batch, num_chunks]
+            batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
+
+            # Threshold the probabilities to obtain a binary mask per chunk.
+            batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
+
+            # Upsample the chunk-level mask to a sample-level mask.
+            # Each chunk's decision is repeated for chunk_size samples.
+            sample_masks = torch.repeat_interleave(batch_chunk_mask, 512, dim=1).to(y.device)
+
+            # Since the upsampled mask might be longer than the actual audio length,
+            # slice the mask to match the original number of samples.
+            sample_length = x.shape[-1]
+            sample_masks = sample_masks[:, :sample_length]
+
+            # Apply the mask to the original audio to zero out non-speech regions.
+            masked_y = y * sample_masks
+            return masked_y, all_watermark_stft
         else:
             print("Not enough watermarking!!!!")
             return None
@@ -254,6 +276,7 @@ class Decoder(nn.Module):
         msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
         msg = self.msg_linear_out(msg)
         return msg
+
 
 
 class Discriminator(nn.Module):
