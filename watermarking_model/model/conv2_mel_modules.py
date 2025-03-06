@@ -114,7 +114,7 @@ class Encoder(nn.Module):
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
-        self.msg_linear_in = FCBlock(msg_length, self.win_dim, activation=LeakyReLU(inplace=False))
+        self.msg_linear_in = FCBlock(msg_length, self.win_dim//2, activation=LeakyReLU(inplace=False))
 
         #stft transform
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
@@ -169,7 +169,7 @@ class Encoder(nn.Module):
             # torch.Size([B, 81, 1])
             # torch.Size([B, 1, 81, 1])
             # torch.Size([B, 1, 162, 206])
-            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 1,
+            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 2,
                                                                                             carrier_encoded.shape[3])
             concatenated_feature = torch.cat((carrier_encoded, stft_result[:, :, :,
                                                                i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)], watermark_encoded), dim=1)
