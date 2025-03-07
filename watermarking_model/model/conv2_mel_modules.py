@@ -215,7 +215,7 @@ class Encoder(nn.Module):
 
             # Apply the mask to the original audio to zero out non-speech regions.
             masked_y = y * sample_masks
-            return masked_y, all_watermark_stft
+            return y, all_watermark_stft
         else:
             print("Not enough watermarking!!!!")
             return None
