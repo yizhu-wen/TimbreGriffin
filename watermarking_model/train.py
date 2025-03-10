@@ -467,9 +467,9 @@ def main(configs):
         test_avg_msg_loss /= count
         test_avg_d_loss_on_encoded /= count
         test_avg_d_loss_on_cover /= count
-        logging.info('#e' * 60)
+        logging.info('#test' * 20)
         logging.info("Test: wav_loss:{:.8f} - msg_loss:{:.8f} - tfloudness_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - d_loss_on_encoded:{} - d_loss_on_cover:{}".format(
-            val_avg_wav_loss, val_avg_msg_loss, val_avg_loudness_loss, val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded.item(), val_avg_d_loss_on_cover.item()))
+            test_avg_wav_loss, test_avg_msg_loss, test_avg_loudness_loss, test_avg_acc[0], test_avg_acc[1], test_avg_snr, test_avg_d_loss_on_encoded.item(), test_avg_d_loss_on_cover.item()))
 
 
 if __name__ == "__main__":
