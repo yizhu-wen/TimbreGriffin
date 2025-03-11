@@ -395,7 +395,7 @@ def main(configs):
             val_avg_d_loss_on_cover /= count
             logging.info('#e' * 60)
             logging.info("epoch:{} - wav_loss:{:.8f} - msg_loss:{:.8f} - tfloudness_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - d_loss_on_encoded:{} - d_loss_on_cover:{}".format(
-                ep, val_avg_wav_loss, val_avg_msg_loss, val_avg_loudness_loss,val_avg_acc[0], val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded.item(), val_avg_d_loss_on_cover.item()))
+                ep, val_avg_wav_loss, val_avg_msg_loss, val_avg_loudness_loss, val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded.item(), val_avg_d_loss_on_cover.item()))
         val_metrics = {
             "val/wav_loss": val_avg_wav_loss,
             "val/msg_loss": val_avg_msg_loss,
@@ -418,6 +418,7 @@ def main(configs):
         test_avg_loudness_loss = 0
         test_avg_d_loss_on_encoded = 0
         test_avg_d_loss_on_cover = 0
+        count = 0
         for sample in track(dev_audios_loader):
             count += 1
             b = sample["matrix"].shape[0]
@@ -491,9 +492,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Read Config
-    process_config = yaml.load(
-        open(args.process_config, "r"), Loader=yaml.FullLoader
-    )
+    process_config = yaml.load(open(args.process_config, "r"), Loader=yaml.FullLoader)
     model_config = yaml.load(open(args.model_config, "r"), Loader=yaml.FullLoader)
     train_config = yaml.load(open(args.train_config, "r"), Loader=yaml.FullLoader)
     configs = (process_config, model_config, train_config)

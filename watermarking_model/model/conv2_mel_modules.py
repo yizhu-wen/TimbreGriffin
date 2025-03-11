@@ -7,7 +7,7 @@ from distortions.frequency2 import fixed_STFT
 from silero_vad import load_silero_vad
 
 # from distortions.dl import distortion
-
+import random
 
 # Optional: set up a small constant
 EPS = 1e-9
@@ -106,8 +106,9 @@ class Encoder(nn.Module):
         self.hop_length = process_config["mel"]["hop_length"]
         self.win_length = process_config["mel"]["win_length"]
         self.sampling_rate = process_config["audio"]["or_sample_rate"]
-        self.future_amt = train_config["watermark"]["future_amt_waveform"] // self.hop_length + 1
-        self.future = True
+        self.delay_amt = int((train_config["watermark"]["delay_amt_second"]*self.sampling_rate) // self.hop_length + 1)
+        self.future_amt = int((train_config["watermark"]["future_amt_second"]*self.sampling_rate) // self.hop_length + 1)
+        self.delay = True
         self.power = 1.0
         self.vad = load_silero_vad()
         self.vad_threshold = 0.50
@@ -129,19 +130,20 @@ class Encoder(nn.Module):
         respecting future_amt and chunk-based offsets.
         """
         B, C, F, T_in = input_stft.shape
-        _, c, _, t_in = watermark_stft.shape
         T_wm = watermark_stft.shape[3]
-        chunk_size = voice_prefilling if not self.future else (voice_prefilling + self.future_amt)
+        chunk_size = voice_prefilling if not self.delay else (voice_prefilling + self.delay_amt)
 
         zeros_right_len = T_in - T_wm - chunk_size
         if zeros_right_len < 0:
             # Edge case: won't happen if chunking logic is correct, but just to be safe
             zeros_right_len = 0
 
-        zeros_left = torch.zeros(B, c, F, chunk_size, device=watermark_stft.device)
+        zeros_left = torch.zeros(B, C, F, chunk_size, device=watermark_stft.device)
         zeros_right = torch.zeros(
-            B, c, F, zeros_right_len, device=watermark_stft.device
+            B, C, F, zeros_right_len, device=watermark_stft.device
         )
+
+
         actual_watermark = torch.cat([zeros_left, watermark_stft, zeros_right], dim=3)
         return actual_watermark + EPS  # small offset
 
@@ -151,28 +153,30 @@ class Encoder(nn.Module):
         B, freq_bin, time_frames = spect.shape  # [B, freq_bin, time_frames]
         spect = spect.unsqueeze(1)
         # Evaluate how many chunks we can process
-        # 2s input + 0.05s calculation delay
-        # 2.05*16000 = 32800
-        # 32800 // hop_length + 1 = 206 center=True
-        voice_prefilling = int((2.05*self.sampling_rate)//self.hop_length + 1)
+        # 2s input + 0.5s calculation delay
+        # 2.00*16000 = 32000
+        # 32800 // hop_length + 1 = 201 center=True
+        # 0.5s*16000 = 8000
+        # 8000 // hop_length + 1 = 51 center=True
+        voice_prefilling = int((2.00*self.sampling_rate)//self.hop_length + 1)
         # Predict future 0.5s watermark
         # 0.5*16000 = 8000
         # 8000 // hop_length + 1 =51
-        max_start = time_frames - (voice_prefilling + self.future_amt)
-        if int(max_start / self.future_amt+1) <= 0:
+        max_start = time_frames - (voice_prefilling + self.delay_amt)
+        if int(max_start / self.delay_amt) <= 0:
             return None  # Not enough frames for a chunk
 
         list_of_watermarks = []
-        for i in range(int((time_frames - (voice_prefilling + self.future_amt))/(self.future_amt+1))):
-            carrier_encoded = self.ENc(stft_result[:, :, :, i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)])
+        for i in range(int((time_frames - (voice_prefilling + self.delay_amt)) / self.future_amt)):
+            carrier_encoded = self.ENc(stft_result[:, :, :, i * self.future_amt:voice_prefilling + i * self.future_amt])
             # torch.Size([B, 1, 81])
             # torch.Size([B, 81, 1])
             # torch.Size([B, 1, 81, 1])
-            # torch.Size([B, 1, 162, 206])
+            # torch.Size([B, 1, 162, 201])
             watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 2,
                                                                                             carrier_encoded.shape[3])
             concatenated_feature = torch.cat((carrier_encoded, stft_result[:, :, :,
-                                                               i*(self.future_amt+1):voice_prefilling + i*(self.future_amt+1)], watermark_encoded), dim=1)
+                                                               i*self.future_amt:voice_prefilling + i*self.future_amt], watermark_encoded), dim=1)
             # [B, 2, bins, length]
             # Embed the watermark
             carrier_watermarked = self.EM(concatenated_feature)
@@ -182,9 +186,9 @@ class Encoder(nn.Module):
         if len(list_of_watermarks) > 0:
             watermark = torch.cat(list_of_watermarks, dim=-1)
             all_watermark_stft = self.pad_w_zero_stft(
-                spect, watermark, voice_prefilling
+                stft_result, watermark, voice_prefilling
             )
-            mask=spect!=0
+            mask=stft_result!=0
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
 
             self.stft.num_samples = num_samples
@@ -226,7 +230,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.robust = model_config["robust"]
         # if self.robust:
-        #     self.dl = distortion()
+        #     self.dl = distortion(process_config, train_config)
 
         # self.mel_transform = TacotronSTFT(filter_length=process_config["mel"]["n_fft"], hop_length=process_config["mel"]["hop_length"], win_length=process_config["mel"]["win_length"])
         # self.vocoder = get_vocoder(device)
@@ -248,7 +252,7 @@ class Decoder(nn.Module):
         #     y_d = (self.mel_transform.griffin_lim(magnitudes=y_mel)).unsqueeze(1)
         # else:
         #     y_d = y
-        if self.robust:
+        if self.robust and random.random() < 0.1:
             y_d_d = self.dl(y_d, self.robust)
         else:
             y_d_d = y_d

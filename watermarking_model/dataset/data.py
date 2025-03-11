@@ -452,15 +452,16 @@ class WavDataset(Dataset):
                 self.original_sample_rate, self.sample_rate
             )
 
-        self.future_amt_waveform = train_config["watermark"]["future_amt_waveform"]
         self.max_wav_value = process_config["audio"]["max_wav_value"]
         self.win_len = process_config["audio"]["win_len"]
         self.max_len = process_config["audio"]["max_len"]
         self.data_percentage = process_config["audio"]["data_percentage"]
+        self.delay_amt = train_config["watermark"]["delay_amt_second"]*self.original_sample_rate
+        self.future_amt = train_config["watermark"]["future_amt_second"]*self.original_sample_rate
 
-        # For example, 2.05s * 16000 = 32800 frames
-        # plus future_amt_waveform*2 padding
-        self.min_length = 32800 + self.future_amt_waveform * 2
+        # For example, 2s * 16000 = 32000 frames
+        # plus delay_amt_second and future_amt_second
+        self.min_length = int(32800 + self.delay_amt + self.future_amt)
 
         # Filter out short files
         self.wavs = self._filter_wavs()

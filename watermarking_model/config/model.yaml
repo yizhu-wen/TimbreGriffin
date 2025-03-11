@@ -7,13 +7,10 @@ structure:
   vocoder_step: 0
   ab: 0
 
-
 robust: 0
-
 
 dim:
   embedding: 512
-
 
 layer:
   nlayers_encoder: 6
@@ -21,16 +18,13 @@ layer:
   nlayers_decoder: 6
   attention_heads_decoder: 8
 
-
 wm:
   kernel_size: 3
   n_temporal_layer: 2
 
-
 audio:
   kernel_size: 3
   n_temporal_layer: 2
-
 
 conv_module:
   hidden_size: 32
@@ -39,13 +33,11 @@ conv_module:
   n_linear_layer: 0
   hidden_dim: 512
 
-
 conv2:
   block: 'skip' #'skip', 'relu'
   layers_CE: 3
   layers_EM: 4
   hidden_dim: 64
-
 
 test:
   model_path: "./results/ckpt/pth/" 

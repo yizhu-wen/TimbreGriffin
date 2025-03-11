@@ -1,8 +1,6 @@
 dataset: "librispeech"
 
-
 adv: True
-
 
 path:
   raw_path: "/storage/seit-guohanqi/librispeech_dataset/LibriSpeech_wav"
@@ -12,11 +10,10 @@ path:
   ckpt: "results/ckpt/"
   log_path: "results/log/"
 
-
 watermark:
   length: 10
-  future_amt_waveform: 8000
-
+  delay_amt_second: 0.5
+  future_amt_second: 0.5
 
 optimize:
   lr: 0.00002
@@ -40,7 +37,6 @@ optimize:
   lr_disc: 0.00002
   alpha: 10
   train_size: 31000
-
 
 iter:
   epoch: 20

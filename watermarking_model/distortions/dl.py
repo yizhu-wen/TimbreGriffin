@@ -8,23 +8,27 @@ import kornia
 from distortions.frequency2 import fixed_STFT
 from functools import partial
 import typing as tp
-from omegaconf import DictConfig
+import omegaconf
 
-SAMPLE_RATE = 16000
+
 
 class distortion(nn.Module):
-    def __init__(self, process_config, ):
+    def __init__(self, process_config, train_config):
         super(distortion, self).__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.resample_kernel1 = julius.ResampleFrac(SAMPLE_RATE, 16000).to(self.device)
-        self.resample_kernel1_re = julius.ResampleFrac(16000, SAMPLE_RATE).to(self.device)
-        self.resample_kernel2 = julius.ResampleFrac(SAMPLE_RATE, 8000).to(self.device)
-        self.resample_kernel2_re = julius.ResampleFrac(8000, SAMPLE_RATE,).to(self.device)
+        self.sample_rate = process_config["audio"]["or_sample_rate"]
+        self.resample_kernel1 = julius.ResampleFrac(self.sample_rate, 16000).to(self.device)
+        self.resample_kernel1_re = julius.ResampleFrac(16000, self.sample_rate).to(self.device)
+        self.resample_kernel2 = julius.ResampleFrac(self.sample_rate, 8000).to(self.device)
+        self.resample_kernel2_re = julius.ResampleFrac(8000, self.sample_rate,).to(self.device)
         self.augment = Compose([Mp3Compression(p=1.0, min_bitrate=64, max_bitrate=64)])
-        self.band_lowpass = julius.LowPassFilter(2000/SAMPLE_RATE).to(self.device)
-        self.band_highpass = julius.HighPassFilter(500/SAMPLE_RATE).to(self.device)
+        self.band_lowpass = julius.LowPassFilter(2000/self.sample_rate).to(self.device)
+        self.band_highpass = julius.HighPassFilter(500/self.sample_rate).to(self.device)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"]).to(self.device)
-    
+        self.encodec = EncodecModel.from_pretrained("facebook/encodec_24khz")
+        self.nq = train_config["audio_effects"]["encodec"]["n_qs"]
+        self.audio_effects = dict(train_config["aug_weights"])
+
     def none(self, x):
         return x
 
@@ -112,7 +116,7 @@ class distortion(nn.Module):
         f = []
         a = y.cpu().detach().numpy()
         for i in a:
-            f.append(torch.Tensor(self.augment(i,sample_rate=SAMPLE_RATE)))
+            f.append(torch.Tensor(self.augment(i,sample_rate=self.sample_rate)))
         f = torch.cat(f,dim=0).unsqueeze(1).to(self.device)
         # y = y + (f - y).detach()
         # return y
@@ -253,8 +257,14 @@ class distortion(nn.Module):
         self.stft.num_samples = num_samples
         y = self.stft.inverse(spect.squeeze(1), phase.squeeze(1))
         return y
-    
-    
+    # def encodec_transformation(self, y):
+    #     self.encodec.to(y.device)
+    #     self.encodec.set_num_codebooks(self.nq)
+    #     codes, scale = self.encodec.encode(julius.resample_frac(y, old_sr=self.sample_rate, new_sr=self.encodec.sample_rate))
+    #     compressed = self.encodec.decode(codes=codes, scale=scale)
+    #     return julius.resample_frac(
+    #         compressed, old_sr=self.encodec.sample_rate, new_sr=self.sample_rate
+    #     )
 
     def forward(self, x, attack_choice=1, ratio=10):
         attack_functions = {
@@ -281,11 +291,11 @@ class distortion(nn.Module):
             20: lambda x: self.crop_mel_wave_back(x, ratio),    # mask from top with ratio "ratio" and transform back to wav
             21: lambda x: self.crop_mel_position(x, ratio),     # mask 10% at position "ratio"
             22: lambda x: self.crop_mel_wave_position(x, ratio),# mask 10% at position "ratio" and transform back to wav
-            
             23: lambda x: self.crop_mel_position_5(x, ratio),       # mask 5% at position "ratio"
             24: lambda x: self.crop_mel_wave_position_5(x, ratio),  # mask 5% at position "ratio" and transform back to wav
             25: lambda x: self.crop_mel_position_20(x, ratio),      # mask 20% at position "ratio"
             26: lambda x: self.crop_mel_wave_position_20(x, ratio), # mask 20% at position "ratio" and transform back to wav
+            27: lambda x: self.encodec_transformation(x)
         }
 
         x = x.clamp(-1, 1)
