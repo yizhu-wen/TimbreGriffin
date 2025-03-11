@@ -115,7 +115,7 @@ class Encoder(nn.Module):
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
-        self.msg_linear_in = FCBlock(msg_length, self.win_dim//2, activation=LeakyReLU(inplace=False))
+        self.msg_linear_in = FCBlock(msg_length, self.win_dim//2, activation=LeakyReLU(inplace=True))
 
         #stft transform
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
@@ -129,23 +129,18 @@ class Encoder(nn.Module):
         Pad the watermarked stft output with zeros on the left + right,
         respecting future_amt and chunk-based offsets.
         """
-        B, C, F, T_in = input_stft.shape
-        T_wm = watermark_stft.shape[3]
         chunk_size = voice_prefilling if not self.delay else (voice_prefilling + self.delay_amt)
 
-        zeros_right_len = T_in - T_wm - chunk_size
+        zeros_right_len = input_stft.shape[3] - watermark_stft.shape[3] - chunk_size
         if zeros_right_len < 0:
             # Edge case: won't happen if chunking logic is correct, but just to be safe
             zeros_right_len = 0
 
-        zeros_left = torch.zeros(B, C, F, chunk_size, device=watermark_stft.device)
-        zeros_right = torch.zeros(
-            B, C, F, zeros_right_len, device=watermark_stft.device
-        )
+        zeros_left = torch.zeros_like(input_stft[:, :, :, :chunk_size])
+        zeros_right = torch.zeros_like(input_stft[:, :, :, :zeros_right_len])
 
-
-        actual_watermark = torch.cat([zeros_left, watermark_stft, zeros_right], dim=3)
-        return actual_watermark + EPS  # small offset
+        actual_watermark = torch.cat([zeros_left, watermark_stft, zeros_right], dim=3) + EPS
+        return actual_watermark
 
     def forward(self, x, msg, global_step):
         num_samples = x.shape[-1]
@@ -188,22 +183,25 @@ class Encoder(nn.Module):
             all_watermark_stft = self.pad_w_zero_stft(
                 stft_result, watermark, voice_prefilling
             )
+            del list_of_watermarks
             mask=stft_result!=0
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
 
             self.stft.num_samples = num_samples
 
-            # Compute the magnitude (spect)
-            spect = torch.sqrt(all_watermark_stft[:, 0, :, :] ** 2 + all_watermark_stft[:, 1, :, :] ** 2)
-
-            # Compute the phase using arctan2
-            phase = torch.atan2(all_watermark_stft[:, 1, :, :], all_watermark_stft[:, 0, :, :])
+            # Recompute magnitude & phase
+            real_part = all_watermark_stft[:, 0, :, :]
+            imag_part = all_watermark_stft[:, 1, :, :]
+            spect = torch.sqrt(real_part ** 2 + imag_part ** 2)
+            phase = torch.atan2(imag_part, real_part)
 
             y = self.stft.inverse(spect, phase).squeeze(1)
+            del spect, phase, real_part, imag_part
 
-            # Get chunk-level speech probabilities for the batch.
-            # The output shape should be [batch, num_chunks]
-            batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
+            with torch.no_grad():
+                # Get chunk-level speech probabilities for the batch.
+                # The output shape should be [batch, num_chunks]
+                batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
 
             # Threshold the probabilities to obtain a binary mask per chunk.
             batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
@@ -241,10 +239,10 @@ class Decoder(nn.Module):
         self.block = model_config["conv2"]["block"]
         self.EX = WatermarkExtracter(input_channel=2, hidden_dim=model_config["conv2"]["hidden_dim"], block=self.block)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
-        self.msg_linear_out = FCBlock(self.win_dim//2, msg_length)
+        self.msg_linear_out = FCBlock(self.win_dim//2, msg_length, activation=LeakyReLU(inplace=True))
 
     def forward(self, y, global_step):
-        y_identity = y.clone()
+        y_identity = y
         y_d = y
         # if global_step > self.vocoder_step:
         #     y_mel = self.mel_transform.mel_spectrogram(y.squeeze(1))
@@ -274,6 +272,7 @@ class Decoder(nn.Module):
         msg_avg_identity = (low_msg_identity + high_msg_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
         # msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
         msg_identity = self.msg_linear_out(msg_avg_identity)
+        del stft_result, stft_result_identity, extracted_wm, extracted_wm_identity
         return msg, msg_identity
 
     def test_forward(self, y):
