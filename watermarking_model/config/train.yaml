@@ -23,7 +23,7 @@ optimize:
   lambda_no_m: 0.01
   lambda_a: 0.01
   lambda_b: 1.
-  batch_size: 4  # remote batch_size=4, local batch_size=2
+  batch_size: 3  # remote batch_size=4, local batch_size=2
   step_size: 5000 # large value means do not decay
   gamma: 0.98
   betas: [0.9, 0.98]
@@ -89,7 +89,7 @@ audio_effects:
     lowpass_freq: null # don't apply low pass freq to ffmpeg aac compression
   encodec:
     ckpt: "//pretrained/facebook/encodec_24khz"
-    n_qs: [4, 8, 16]
+    n_bandwidth: [3, 6, 12]  # corresponds to n_qs [4, 8, 16]
 
 select_aug_mode:
   "use_eval" # other are 'all' and 'use_eval_acc', used to sample augmentations, `fixed` uses the prob from aug_weights, `all` uses all agmentations every step

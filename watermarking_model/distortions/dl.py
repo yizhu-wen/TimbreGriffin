@@ -6,6 +6,7 @@ import julius
 from audiomentations import Compose, Mp3Compression
 import kornia
 from distortions.frequency2 import fixed_STFT
+# from encodec import EncodecModel
 from functools import partial
 import typing as tp
 import omegaconf
@@ -25,8 +26,8 @@ class distortion(nn.Module):
         self.band_lowpass = julius.LowPassFilter(2000/self.sample_rate).to(self.device)
         self.band_highpass = julius.HighPassFilter(500/self.sample_rate).to(self.device)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"]).to(self.device)
-        self.encodec = EncodecModel.from_pretrained("facebook/encodec_24khz")
-        self.nq = train_config["audio_effects"]["encodec"]["n_qs"]
+        # self.encodec = EncodecModel.encodec_model_24khz()
+        # self.n_bandwidth = train_config["audio_effects"]["encodec"]["n_bandwidth"]
         self.audio_effects = dict(train_config["aug_weights"])
 
     def none(self, x):
@@ -258,13 +259,15 @@ class distortion(nn.Module):
         y = self.stft.inverse(spect.squeeze(1), phase.squeeze(1))
         return y
     # def encodec_transformation(self, y):
-    #     self.encodec.to(y.device)
-    #     self.encodec.set_num_codebooks(self.nq)
-    #     codes, scale = self.encodec.encode(julius.resample_frac(y, old_sr=self.sample_rate, new_sr=self.encodec.sample_rate))
-    #     compressed = self.encodec.decode(codes=codes, scale=scale)
-    #     return julius.resample_frac(
-    #         compressed, old_sr=self.encodec.sample_rate, new_sr=self.sample_rate
-    #     )
+    #     encodec_output_list = []
+    #     for n_bandwidth in self.n_bandwidth:
+    #         self.encodec.set_target_bandwidth(n_bandwidth)
+    #         compressed = self.encodec(julius.resample_frac(y, old_sr=self.sample_rate, new_sr=self.encodec.sample_rate))
+    #         y_d = julius.resample_frac(
+    #             compressed, old_sr=self.encodec.sample_rate, new_sr=self.sample_rate
+    #         )
+    #         encodec_output_list.append(y_d)
+    #     return encodec_output_list
 
     def forward(self, x, attack_choice=1, ratio=10):
         attack_functions = {
@@ -300,6 +303,10 @@ class distortion(nn.Module):
 
         x = x.clamp(-1, 1)
         y = attack_functions[attack_choice](x)
-        y = y.clamp(-1, 1)
+        if isinstance(y, list):
+            # Apply clamp(-1, 1) to each tensor in the list
+            y = [tensor.clamp(-1, 1) for tensor in y]
+        else:
+            y = y.clamp(-1, 1)
         return y
 
