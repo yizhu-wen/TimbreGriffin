@@ -12,25 +12,69 @@ import random
 # Optional: set up a small constant
 EPS = 1e-9
 
-
-def save_spectrum(spect, phase, flag='linear'):
+def save_spectrum(y, flag='linear'):
     import numpy as np
     import os
     import librosa
     import librosa.display
-    root = "draw_figure"
     import matplotlib.pyplot as plt
-    spect = spect/torch.max(torch.abs(spect))
-    spec = librosa.amplitude_to_db(spect.squeeze(0).cpu().numpy(), ref=np.max, amin=1e-5)
-    img=librosa.display.specshow(spec, sr=16000, x_axis='time', y_axis='log', y_coords=None);
-    plt.axis('off')
-    plt.savefig(os.path.join(root, flag + '_amplitude_spectrogram.png'), bbox_inches='tight', pad_inches=0.0)
-    phase = phase/torch.max(torch.abs(phase))
-    spec = librosa.amplitude_to_db(phase.squeeze(0).cpu().numpy(), ref=np.max, amin=1e-5)
-    img=librosa.display.specshow(spec, sr=16000, x_axis='time', y_axis='log', y_coords=None);
-    plt.clim(-40, 40)
-    plt.axis('off')
-    plt.savefig(os.path.join(root, flag + '_phase_spectrogram.png'), bbox_inches='tight', pad_inches=0.0)
+
+    # Directory to save figures
+    root = "draw_figure"
+    os.makedirs(root, exist_ok=True)
+
+    plt.figure(figsize=(10, 4))
+    plt.specgram(y, Fs=16000, NFFT=320, noverlap=160, window=np.hanning(320), cmap='magma')
+
+    plt.colorbar(format='%+2.0f dB')
+    plt.title('Amplitude Spectrogram')
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(root, f"{flag}_amplitude_spectrogram.png"),
+        bbox_inches='tight',
+        pad_inches=0.0
+    )
+    plt.close()
+
+def save_spectrum_normal(y, flag='linear'):
+    import numpy as np
+    import os
+    import librosa
+    import librosa.display
+    import matplotlib.pyplot as plt
+
+    peak = np.max(np.abs(y))
+    if peak > 1e-8:
+        y = y / peak
+
+    # Directory to save figures
+    root = "draw_figure"
+    os.makedirs(root, exist_ok=True)
+
+    plt.figure(figsize=(10, 4))
+
+    # Compute the spectrogram
+    Pxx, freqs, bins, im = plt.specgram(
+        y, Fs=16000, NFFT=320, noverlap=160, cmap='magma'
+    )
+
+    Pxx_dB = librosa.amplitude_to_db(Pxx, ref=np.max)
+
+    # Clear previous plot and redraw with log values
+    plt.clf()
+    plt.figure(figsize=(10, 4))
+    plt.pcolormesh(bins, freqs, Pxx_dB, shading='auto', cmap='magma')
+
+    plt.colorbar(format='%+2.0f dB')
+    plt.title('Log Amplitude Spectrogram')
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(root, f"{flag}_amplitude_spectrogram.png"),
+        bbox_inches='tight',
+        pad_inches=0.0
+    )
+    plt.close()
+
 
 def save_feature_map(feature_maps):
     import os
@@ -144,9 +188,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, msg, global_step):
         num_samples = x.shape[-1]
-        spect, _, stft_result = self.stft.transform(x)
-        B, freq_bin, time_frames = spect.shape  # [B, freq_bin, time_frames]
-        spect = spect.unsqueeze(1)
+        _, _, stft_result = self.stft.transform(x)
         # Evaluate how many chunks we can process
         # 2s input + 0.5s calculation delay
         # 2.00*16000 = 32000
@@ -157,12 +199,12 @@ class Encoder(nn.Module):
         # Predict future 0.5s watermark
         # 0.5*16000 = 8000
         # 8000 // hop_length + 1 =51
-        max_start = time_frames - (voice_prefilling + self.delay_amt)
+        max_start = stft_result.shape[-1] - (voice_prefilling + self.delay_amt)
         if int(max_start / self.delay_amt) <= 0:
             return None  # Not enough frames for a chunk
 
         list_of_watermarks = []
-        for i in range(int((time_frames - (voice_prefilling + self.delay_amt)) / self.future_amt)):
+        for i in range(int((stft_result.shape[-1] - (voice_prefilling + self.delay_amt)) / self.future_amt)):
             carrier_encoded = self.ENc(stft_result[:, :, :, i * self.future_amt:voice_prefilling + i * self.future_amt])
             # torch.Size([B, 1, 81])
             # torch.Size([B, 81, 1])
@@ -253,8 +295,8 @@ class Decoder(nn.Module):
         if self.robust and random.random() < 0.1:
             y_d_d = self.dl(y_d, self.robust)
         else:
-            y_d_d = y_d
-        _, _, stft_result = self.stft.transform(y_d_d)
+            y_d_d = y_d / (torch.max(torch.abs(y), dim=1, keepdim=True)[0] + 1e-8)
+        spect, phase, stft_result = self.stft.transform(y_d_d)
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
         # Explicitly split the 162-dim vector into two halves of 81-dim each
         low, high = extracted_wm.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
@@ -275,12 +317,6 @@ class Decoder(nn.Module):
         del stft_result, stft_result_identity, extracted_wm, extracted_wm_identity
         return msg, msg_identity
 
-    def test_forward(self, y):
-        spect, phase, stft_result= self.stft.transform(y)
-        extracted_wm = self.EX(stft_result).squeeze(1)
-        msg = torch.mean(extracted_wm,dim=2, keepdim=True).transpose(1,2)
-        msg = self.msg_linear_out(msg)
-        return msg
 
 
 
@@ -364,8 +400,3 @@ class Discriminator(nn.Module):
         x = x.squeeze(2).squeeze(2)
         x = self.linear(x)
         return x
-
-
-# def get_param_num(model):
-#     num_param = sum(param.numel() for param in model.parameters())
-#     return num_param

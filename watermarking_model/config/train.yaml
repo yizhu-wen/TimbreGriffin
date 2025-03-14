@@ -44,8 +44,9 @@ iter:
   save_circle: 5
   show_circle: 100
   val_circle: 100
-  data_divider: 5
+  data_divider: 1
   test_record_num: 100
+  num_save_img: 10
 
 # @package __global__
 
@@ -114,10 +115,8 @@ aug_weights:
 n_max_aug: null
 
 wandb:
-  enabled: false  # Set to true to enable wandb logging
+  enabled: true  # Set to true to enable wandb logging
   project: "real-time-voice-watermark"
-  name: "shift 1"
+  name: "FullSet"
   key: "9a11e5364efe3bb8fedb3741188ee0d714e942e2"
-  WANDB_DIR: "/storage/seit-guohanqi/yizhu_wen/Real-time-Voice-Watermark/wandb_dir"
-  WANDB_TMP_DIR: "/storage/seit-guohanqi/yizhu_wen/Real-time-Voice-Watermark/wandb_tmp_dir"
 

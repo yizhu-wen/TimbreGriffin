@@ -4,7 +4,10 @@ import yaml
 import logging
 import argparse
 import wandb
+from io import BytesIO
+import matplotlib.cm as cm
 import numpy as np
+import matplotlib.pyplot as plt
 from torch.optim import Adam
 from rich.progress import track
 from torch.utils.data import DataLoader
@@ -12,16 +15,50 @@ from model.loss import Loss_identity
 from utils.tools import save, log, save_op
 from utils.optimizer import ScheduledOptimMain, ScheduledOptimDisc, my_step
 from itertools import chain
+import librosa.display
 from torch.nn.functional import mse_loss
 from dataset.data import collate_fn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import StepLR
-from model.conv2_mel_modules import Encoder, Decoder, Discriminator, save_waveform
+from model.conv2_mel_modules import Encoder, Decoder, Discriminator, save_waveform, save_spectrum, save_spectrum_normal
 from dataset.data import WavDataset as MyDataset
+import tempfile
 import random
 import shutil
-
+from PIL import Image
 import torch.backends.cudnn as cudnn
+
+def save_spectrogram_to_buffer(signal, sample_rate=16000):
+    buf = BytesIO()
+    plt.figure(figsize=(10, 4))
+    plt.specgram(
+        np.maximum(signal.cpu().detach().numpy(), 1e-10),
+        Fs=sample_rate,
+        NFFT=320,
+        noverlap=160,
+        window=np.hanning(320),
+        cmap='magma',
+        vmin=-100,
+    )
+    plt.colorbar(format='%+2.0f dB')
+    plt.tight_layout()
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.0)
+    plt.close()
+    buf.seek(0)  # reset buffer pointer to beginning
+    return buf
+
+def buffer_to_wandb_image(buffer, caption=""):
+    # Convert the buffer to a PIL Image, then to a numpy array.
+    img = Image.open(buffer)
+    np_img = np.array(img)
+    return wandb.Image(np_img, caption=caption)
+
+def normalize_audio(y: torch.Tensor) -> torch.Tensor:
+    """Normalize an audio tensor so its maximum absolute value is 1."""
+    peak = torch.max(torch.abs(y))
+    if peak.item() > 1e-8:
+        y = y / peak
+    return y
 
 # Set random seed for reproducibility
 def set_random_seed(seed: int):
@@ -46,7 +83,7 @@ set_random_seed(SEED)
 logging_mark = "#"*20
 # warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO, format='%(message)s')
-device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def main(configs):
     logging.info('main function')
@@ -96,10 +133,6 @@ def main(configs):
 
     # Initialize wandb only if enabled in config
     if train_config["wandb"]["enabled"]:
-        os.environ["WANDB_DIR"] = train_config["wandb"]["WANDB_DIR"]
-        os.environ["WANDB_TMP_DIR"] = train_config["wandb"]["WANDB_TMP_DIR"]
-        os.makedirs(train_config["wandb"]["WANDB_DIR"], exist_ok=True)
-        os.makedirs(train_config["wandb"]["WANDB_TMP_DIR"], exist_ok=True)
         wandb.login(key=train_config["wandb"]["key"])
         wandb.init(
             project=train_config["wandb"]["project"],
@@ -111,8 +144,8 @@ def main(configs):
                 ),
                 "batch_size": train_config["optimize"]["batch_size"],
                 "learning_rate": train_config["optimize"]["lr"],
-                "future_amt": train_config["future_amt"],
-                "future_amt_waveform": train_config["future_amt_waveform"],
+                "delay_amt_second": train_config["watermark"]["delay_amt_second"],
+                "future_amt_second": train_config["watermark"]["future_amt_second"],
                 "nbits": train_config["watermark"]["length"],
                 "epochs": train_config["iter"]["epoch"],
                 "save_circle": train_config["iter"]["save_circle"],
@@ -128,6 +161,7 @@ def main(configs):
                 "test_loudness_loss",
                 "test_acc_1",
                 "test_acc_2",
+                "test_avg_snr",
                 "test_d_loss_on_encoded",
                 "test_d_loss_on_cover",
             ]
@@ -148,16 +182,12 @@ def main(configs):
         )
         test_audio_table = wandb.Table(
             columns=[
-                "Epoch",
                 "Original Audio",
                 "Watermarked Audio",
                 "Watermark Audio",
                 "Original Amplitude Spectrogram",
-                "Original Phase Spectrogram",
                 "Watermarked Amplitude Spectrogram",
-                "Watermarked Phase Spectrogram",
                 "Watermark Amplitude Spectrogram",
-                "Watermark Phase Spectrogram",
             ]
         )
     else:
@@ -204,13 +234,15 @@ def main(configs):
     os.makedirs(val_log_path, exist_ok=True)
 
     # ---------------- train
-    logging.info(logging_mark + "\t" + "Begin Trainging" + "\t" + logging_mark)
+    logging.info(logging_mark + "\t" + "Begin Training" + "\t" + logging_mark)
     epoch_num = train_config["iter"]["epoch"]
     save_circle = train_config["iter"]["save_circle"]
     show_circle = train_config["iter"]["show_circle"]
     lambda_e = train_config["optimize"]["lambda_e"]
     lambda_m = train_config["optimize"]["lambda_m"]
     lambda_b = train_config["optimize"]["lambda_b"]
+    num_save_img = train_config["iter"]["num_save_img"]
+    sample_rate = process_config["audio"]["or_sample_rate"]
     global_step = 0
     train_len = len(train_audios_loader)
     for ep in range(1, epoch_num+1):
@@ -237,7 +269,7 @@ def main(configs):
             msg = generate_random_msg(wav_matrix.size(0), msg_length, device)
             watermark, carrier_wateramrked = encoder(wav_matrix, msg, global_step)
             y_wm = wav_matrix + watermark
-            decoded = decoder(y_wm, global_step)
+            decoded, _, _ = decoder(y_wm, global_step)
             losses = loss.en_de_loss(wav_matrix, y_wm, msg, decoded)
             #lamda_e = 1.
             #lamda_m = 10
@@ -353,9 +385,6 @@ def main(configs):
                 msg = generate_random_msg(wav_matrix.size(0), msg_length, device)
                 watermark, carrier_wateramrked = encoder(wav_matrix, msg, global_step)
 
-                # Add the VAD (Voice Activity Detection) to mask the watermark
-                # Remember to add resample code if it is not 16 kHz
-
                 y_wm = wav_matrix + watermark
                 decoded = decoder(y_wm, global_step)
                 losses = loss.en_de_loss(wav_matrix, y_wm, msg, decoded)
@@ -396,6 +425,7 @@ def main(configs):
             logging.info('#e' * 60)
             logging.info("epoch:{} - wav_loss:{:.8f} - msg_loss:{:.8f} - tfloudness_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - d_loss_on_encoded:{} - d_loss_on_cover:{}".format(
                 ep, val_avg_wav_loss, val_avg_msg_loss, val_avg_loudness_loss, val_avg_acc[0], val_avg_acc[1], val_avg_snr, val_avg_d_loss_on_encoded.item(), val_avg_d_loss_on_cover.item()))
+
         val_metrics = {
             "val/wav_loss": val_avg_wav_loss,
             "val/msg_loss": val_avg_msg_loss,
@@ -406,6 +436,9 @@ def main(configs):
             "val/d_loss_on_encoded": val_avg_d_loss_on_encoded,
             "val/d_loss_on_cover": val_avg_d_loss_on_cover,
         }
+
+        if train_config["wandb"]["enabled"]:
+            wandb.log({**train_metrics, **val_metrics})
 
     with torch.inference_mode():
         encoder.eval()
@@ -457,20 +490,62 @@ def main(configs):
             test_avg_loudness_loss += losses[2]
             test_avg_d_loss_on_cover += d_loss_on_cover
             test_avg_d_loss_on_encoded += d_loss_on_encoded
+            # Initialize wandb only if enabled in config
+            if train_config["wandb"]["enabled"]:
+                if count <= num_save_img:
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        # Normalize each audio signal:
+                        y_norm = normalize_audio(wav_matrix[0].cpu().detach())
+                        y_wm_norm = normalize_audio(y_wm[0].cpu().detach())
+                        wm_norm = normalize_audio(watermark[0].cpu().detach())
 
-        save_waveform(wav_matrix[-1], flag="original")
-        save_waveform(y_wm[-1], flag="watermarked")
-        save_waveform(y_wm[-1] - wav_matrix[-1], flag="watermark")
+                        original_buf = save_spectrogram_to_buffer(y_norm)
+                        watermarked_buf = save_spectrogram_to_buffer(y_wm_norm)
+                        watermark_buf = save_spectrogram_to_buffer(wm_norm)
+
+                        test_audio_table.add_data(
+                            wandb.Audio(wav_matrix[0].cpu().detach().numpy(), sample_rate=sample_rate),
+                            wandb.Audio(y_wm[0].cpu().detach().numpy(), sample_rate=sample_rate),
+                            wandb.Audio(watermark[0].cpu().detach().numpy(), sample_rate=sample_rate),
+                            buffer_to_wandb_image(original_buf),
+                            buffer_to_wandb_image(watermarked_buf),
+                            buffer_to_wandb_image(watermark_buf))
+
         test_avg_acc[0] /= count
         test_avg_acc[1] /= count
         test_avg_snr /= count
         test_avg_wav_loss /= count
         test_avg_msg_loss /= count
+        test_avg_loudness_loss /= count
         test_avg_d_loss_on_encoded /= count
         test_avg_d_loss_on_cover /= count
+        test_loss = test_avg_acc[0] + test_avg_acc[1] + test_avg_snr + test_avg_wav_loss + test_avg_msg_loss + test_avg_d_loss_on_encoded + test_avg_d_loss_on_cover
         logging.info('#test' * 20)
         logging.info("Test: wav_loss:{:.8f} - msg_loss:{:.8f} - tfloudness_loss:{:.8f} - acc:[{:.8f},{:.8f}] - snr:{:.8f} - d_loss_on_encoded:{} - d_loss_on_cover:{}".format(
             test_avg_wav_loss, test_avg_msg_loss, test_avg_loudness_loss, test_avg_acc[0], test_avg_acc[1], test_avg_snr, test_avg_d_loss_on_encoded.item(), test_avg_d_loss_on_cover.item()))
+
+        if train_config["wandb"]["enabled"]:
+            # Log the audio_table to wandb
+            wandb.log({"test_audio_table": test_audio_table})
+
+        if train_config["wandb"]["enabled"] and test_loss_summary_table is not None:
+            test_loss_summary_table.add_data(
+                test_loss,
+                test_avg_wav_loss,
+                test_avg_msg_loss,
+                test_avg_loudness_loss,
+                test_avg_acc[0],
+                test_avg_acc[1],
+                test_avg_snr,
+                test_avg_d_loss_on_encoded,
+                test_avg_d_loss_on_cover,
+            )
+
+            wandb.log(
+                {
+                    "test_loss_summary_table": test_loss_summary_table,
+                }
+            )
 
 
 if __name__ == "__main__":
