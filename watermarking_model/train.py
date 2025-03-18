@@ -491,25 +491,25 @@ def main(configs):
             test_avg_d_loss_on_cover += d_loss_on_cover
             test_avg_d_loss_on_encoded += d_loss_on_encoded
             # Initialize wandb only if enabled in config
-            if train_config["wandb"]["enabled"]:
-                if count <= num_save_img:
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        # Normalize each audio signal:
-                        y_norm = normalize_audio(wav_matrix[0].cpu().detach())
-                        y_wm_norm = normalize_audio(y_wm[0].cpu().detach())
-                        wm_norm = normalize_audio(watermark[0].cpu().detach())
-
-                        original_buf = save_spectrogram_to_buffer(y_norm)
-                        watermarked_buf = save_spectrogram_to_buffer(y_wm_norm)
-                        watermark_buf = save_spectrogram_to_buffer(wm_norm)
-
-                        test_audio_table.add_data(
-                            wandb.Audio(wav_matrix[0].cpu().detach().numpy(), sample_rate=sample_rate),
-                            wandb.Audio(y_wm[0].cpu().detach().numpy(), sample_rate=sample_rate),
-                            wandb.Audio(watermark[0].cpu().detach().numpy(), sample_rate=sample_rate),
-                            buffer_to_wandb_image(original_buf),
-                            buffer_to_wandb_image(watermarked_buf),
-                            buffer_to_wandb_image(watermark_buf))
+            # if train_config["wandb"]["enabled"]:
+            #     if count <= num_save_img:
+            #         with tempfile.TemporaryDirectory() as tmpdir:
+            #             # Normalize each audio signal:
+            #             y_norm = normalize_audio(wav_matrix[0].cpu().detach())
+            #             y_wm_norm = normalize_audio(y_wm[0].cpu().detach())
+            #             wm_norm = normalize_audio(watermark[0].cpu().detach())
+            #
+            #             original_buf = save_spectrogram_to_buffer(y_norm)
+            #             watermarked_buf = save_spectrogram_to_buffer(y_wm_norm)
+            #             watermark_buf = save_spectrogram_to_buffer(wm_norm)
+            #
+            #             test_audio_table.add_data(
+            #                 wandb.Audio(wav_matrix[0].cpu().detach().numpy(), sample_rate=sample_rate),
+            #                 wandb.Audio(y_wm[0].cpu().detach().numpy(), sample_rate=sample_rate),
+            #                 wandb.Audio(watermark[0].cpu().detach().numpy(), sample_rate=sample_rate),
+            #                 buffer_to_wandb_image(original_buf),
+            #                 buffer_to_wandb_image(watermarked_buf),
+            #                 buffer_to_wandb_image(watermark_buf))
 
         test_avg_acc[0] /= count
         test_avg_acc[1] /= count

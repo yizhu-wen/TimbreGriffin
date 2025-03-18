@@ -39,11 +39,11 @@ optimize:
   train_size: 31000
 
 iter:
-  epoch: 20
+  epoch: 100
   # epoch: 100
-  save_circle: 5
-  show_circle: 100
-  val_circle: 100
+  save_circle: 20
+  show_circle: 1000
+  val_circle: 1000
   data_divider: 1
   test_record_num: 100
   num_save_img: 10
