@@ -258,16 +258,6 @@ class distortion(nn.Module):
         self.stft.num_samples = num_samples
         y = self.stft.inverse(spect.squeeze(1), phase.squeeze(1))
         return y
-    # def encodec_transformation(self, y):
-    #     encodec_output_list = []
-    #     for n_bandwidth in self.n_bandwidth:
-    #         self.encodec.set_target_bandwidth(n_bandwidth)
-    #         compressed = self.encodec(julius.resample_frac(y, old_sr=self.sample_rate, new_sr=self.encodec.sample_rate))
-    #         y_d = julius.resample_frac(
-    #             compressed, old_sr=self.encodec.sample_rate, new_sr=self.sample_rate
-    #         )
-    #         encodec_output_list.append(y_d)
-    #     return encodec_output_list
 
     def forward(self, x, attack_choice=1, ratio=10):
         attack_functions = {
