@@ -271,7 +271,6 @@ class Decoder(nn.Module):
         self.robust = model_config["robust"]
         # if self.robust:
         #     self.dl = distortion(process_config, train_config)
-
         self.mel_transform = TacotronSTFT(filter_length=process_config["mel"]["n_fft"], hop_length=process_config["mel"]["hop_length"], win_length=process_config["mel"]["win_length"])
         # self.vocoder = get_vocoder(device)
         self.vocoder_step = model_config["structure"]["vocoder_step"]
