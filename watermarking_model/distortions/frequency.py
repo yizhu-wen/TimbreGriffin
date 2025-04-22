@@ -265,8 +265,6 @@ import librosa.util as librosa_util
 from librosa.filters import mel as librosa_mel_fn
 import pdb
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 def dynamic_range_compression(x, C=1, clip_val=1e-5):
     """
     PARAMS
@@ -420,7 +418,7 @@ class STFT(torch.nn.Module):
                 np.where(window_sum > tiny(window_sum))[0])
             window_sum = torch.autograd.Variable(
                 torch.from_numpy(window_sum), requires_grad=False)
-            window_sum = window_sum.cuda() if magnitude.is_cuda else window_sum
+            window_sum = window_sum.to(magnitude.device) if magnitude.is_cuda else window_sum
             inverse_transform[:, :, approx_nonzero_indices] /= window_sum[approx_nonzero_indices]
 
             # scale by hop ratio
@@ -508,7 +506,7 @@ class TacotronSTFT(torch.nn.Module):
         
         angles = np.angle(np.exp(2j * np.pi * np.random.rand(*magnitudes.size())))
         angles = angles.astype(np.float32)
-        angles = torch.autograd.Variable(torch.from_numpy(angles)).to(device)
+        angles = torch.autograd.Variable(torch.from_numpy(angles)).to(magnitudes.device)
         signal = self.stft_fn.inverse(magnitudes, angles).squeeze(1)
 
         for i in range(n_iters):

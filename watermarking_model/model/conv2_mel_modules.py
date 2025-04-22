@@ -312,10 +312,6 @@ class Decoder(nn.Module):
         return msg, msg_identity
 
 
-
-
-
-
 # class Decoder(nn.Module):
 #     def __init__(self, process_config, model_config, train_config, msg_length):
 #         super(Decoder, self).__init__()

@@ -83,7 +83,7 @@ set_random_seed(SEED)
 logging_mark = "#"*20
 # warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO, format='%(message)s')
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
 
 def main(configs):
     logging.info('main function')
@@ -251,7 +251,6 @@ def main(configs):
         discriminator.train()
         step = 0
         logging.info('Epoch {}/{}'.format(ep, epoch_num))
-
         train_avg_acc = [0, 0]
         train_avg_snr = 0
         train_avg_wav_loss = 0
@@ -259,7 +258,6 @@ def main(configs):
         train_avg_loudness_loss = 0
         train_avg_d_loss_on_encoded = 0
         train_avg_d_loss_on_cover = 0
-
         for sample in track(train_audios_loader):
             global_step += 1
             step += 1
@@ -387,7 +385,6 @@ def main(configs):
                 y_wm = wav_matrix + watermark
                 decoded = decoder(y_wm, global_step)
                 losses = loss.en_de_loss(wav_matrix, y_wm, msg, decoded)
-
                 # adv
                 if train_config["adv"]:
                     lambda_a = lambda_m = train_config["optimize"]["lambda_a"]
