@@ -384,7 +384,6 @@ def main(configs):
                 wav_matrix = sample["matrix"].to(device)
                 msg = generate_random_msg(wav_matrix.size(0), msg_length, device)
                 watermark, carrier_wateramrked = encoder(wav_matrix, msg, global_step)
-
                 y_wm = wav_matrix + watermark
                 decoded = decoder(y_wm, global_step)
                 losses = loss.en_de_loss(wav_matrix, y_wm, msg, decoded)
