@@ -19,9 +19,9 @@ class tacotron_mel():
     def __init__(self):
         self.preemphasis=0.0
         self.do_amp_to_db_mel=True
-        self.fft_size = 1024
-        self.hop_length = 256
-        self.win_length = 1024
+        self.fft_size = 322
+        self.hop_length = 160
+        self.win_length = 322
         self.stft_pad_mode = "reflect"
         self.spec_gain=20
         log_func="np.log"
@@ -284,8 +284,8 @@ def dynamic_range_decompression(x, C=1):
     """
     return torch.exp(x) / C
 
-def window_sumsquare(window, n_frames, hop_length=200, win_length=800,
-                     n_fft=800, dtype=np.float32, norm=None):
+def window_sumsquare(window, n_frames, hop_length=160, win_length=322,
+                     n_fft=322, dtype=np.float32, norm=None):
     """
     # from librosa 0.6
     Compute the sum-square envelope of a window function at a given hop length.
@@ -337,7 +337,7 @@ def window_sumsquare(window, n_frames, hop_length=200, win_length=800,
 
 class STFT(torch.nn.Module):
     """adapted from Prem Seetharaman's https://github.com/pseeth/pytorch-stft"""
-    def __init__(self, filter_length=800, hop_length=200, win_length=800,
+    def __init__(self, filter_length=322, hop_length=160, win_length=322,
                  window='hann'):
         super(STFT, self).__init__()
         self.filter_length = filter_length
@@ -446,8 +446,8 @@ def _mel_to_linear_matrix(sr, n_fft, n_mels, mel_fmin, mel_fmax):
 
 
 class TacotronSTFT(torch.nn.Module):
-    def __init__(self, filter_length=1024, hop_length=256, win_length=1024,
-                 n_mel_channels=80, sampling_rate=22050, mel_fmin=0.0,
+    def __init__(self, filter_length=322, hop_length=160, win_length=322,
+                 n_mel_channels=80, sampling_rate=16000, mel_fmin=0.0,
                  mel_fmax=8000.0):
         super(TacotronSTFT, self).__init__()
         self.n_mel_channels = n_mel_channels
@@ -532,7 +532,7 @@ class TacotronSTFT(torch.nn.Module):
 
 class fixed_STFT(torch.nn.Module):
     """adapted from Prem Seetharaman's https://github.com/pseeth/pytorch-stft"""
-    def __init__(self, filter_length=800, hop_length=200, win_length=800,
+    def __init__(self, filter_length=322, hop_length=160, win_length=322,
                  window='hann'):
         super(fixed_STFT, self).__init__()
         self.filter_length = filter_length
@@ -573,12 +573,11 @@ class fixed_STFT(torch.nn.Module):
 
         # # similar to librosa, reflect-pad the input
         # input_data = input_data.view(num_batches, 1, num_samples)
-        
         input_data = F.pad(
             input_data.unsqueeze(1),
             (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
             mode='reflect')
-        input_data = input_data.squeeze(1)
+        # input_data = input_data.squeeze(1)
 
         forward_transform = F.conv1d(
             input_data,
@@ -590,11 +589,14 @@ class fixed_STFT(torch.nn.Module):
         real_part = forward_transform[:, :cutoff, :]
         imag_part = forward_transform[:, cutoff:, :]
 
+        # Create stft_result with shape [b, 2, fre_bins, frame]
+        stft_result = torch.stack([real_part, imag_part], dim=1)
+
         magnitude = torch.sqrt(real_part**2 + imag_part**2)
         phase = torch.autograd.Variable(
             torch.atan2(imag_part.data, real_part.data))
 
-        return magnitude, phase
+        return magnitude, phase, stft_result
 
     def inverse(self, magnitude, phase):
         recombine_magnitude_phase = torch.cat(
