@@ -283,12 +283,13 @@ class Decoder(nn.Module):
 
     def forward(self, y, global_step):
         y_identity = y
-        if global_step > self.vocoder_step:
-            y_mel = self.mel_transform.mel_spectrogram(y.squeeze(1))
-            # y = self.vocoder(y_mel)
-            y_d = (self.mel_transform.griffin_lim(magnitudes=y_mel)).unsqueeze(1)
-        else:
-            y_d = y
+        # if global_step > self.vocoder_step:
+        #     y_mel = self.mel_transform.mel_spectrogram(y.squeeze(1))
+        #     # y = self.vocoder(y_mel)
+        #     y_d = (self.mel_transform.griffin_lim(magnitudes=y_mel)).unsqueeze(1)
+        # else:
+        #     y_d = y
+        y_d = y
 
         spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)

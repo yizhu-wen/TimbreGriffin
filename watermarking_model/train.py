@@ -69,7 +69,6 @@ def set_random_seed(seed: int):
     torch.backends.cudnn.deterministic = True  # Ensures deterministic behavior
     torch.backends.cudnn.benchmark = False  # Disables optimization for reproducibility
 
-
 def generate_random_msg(batch_size, msg_length, device):
     # random [0, 1], mapped to [-1, 1]
     return (
