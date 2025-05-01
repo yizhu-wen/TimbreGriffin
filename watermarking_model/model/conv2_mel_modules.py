@@ -240,26 +240,26 @@ class Encoder(nn.Module):
             y = self.stft.inverse(spect, phase).squeeze(1)
             del spect, phase, real_part, imag_part
 
-            # with torch.no_grad():
-            #     # Get chunk-level speech probabilities for the batch.
-            #     # The output shape should be [batch, num_chunks]
-            #     batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
-            #
-            # # Threshold the probabilities to obtain a binary mask per chunk.
-            # batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
-            #
-            # # Upsample the chunk-level mask to a sample-level mask.
-            # # Each chunk's decision is repeated for chunk_size samples.
-            # sample_masks = torch.repeat_interleave(batch_chunk_mask, 512, dim=1).to(y.device)
-            #
-            # # Since the upsampled mask might be longer than the actual audio length,
-            # # slice the mask to match the original number of samples.
-            # sample_length = x.shape[-1]
-            # sample_masks = sample_masks[:, :sample_length]
-            #
-            # # Apply the mask to the original audio to zero out non-speech regions.
-            # masked_y = y * sample_masks
-            return y, all_watermark_stft
+            with torch.no_grad():
+                # Get chunk-level speech probabilities for the batch.
+                # The output shape should be [batch, num_chunks]
+                batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
+
+            # Threshold the probabilities to obtain a binary mask per chunk.
+            batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
+
+            # Upsample the chunk-level mask to a sample-level mask.
+            # Each chunk's decision is repeated for chunk_size samples.
+            sample_masks = torch.repeat_interleave(batch_chunk_mask, 512, dim=1).to(y.device)
+
+            # Since the upsampled mask might be longer than the actual audio length,
+            # slice the mask to match the original number of samples.
+            sample_length = x.shape[-1]
+            sample_masks = sample_masks[:, :sample_length]
+
+            # Apply the mask to the original audio to zero out non-speech regions.
+            masked_y = y * sample_masks
+            return masked_y, all_watermark_stft
         else:
             print("Not enough watermarking!!!!")
             return None
@@ -279,7 +279,7 @@ class Decoder(nn.Module):
         self.block = model_config["conv2"]["block"]
         self.EX = WatermarkExtracter(input_channel=2, hidden_dim=model_config["conv2"]["hidden_dim"], block=self.block)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
-        self.msg_linear_out = FCBlock(self.win_dim, msg_length, activation=LeakyReLU(inplace=True))
+        self.msg_linear_out = FCBlock(self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True))
 
     def forward(self, y, global_step):
         y_identity = y
@@ -293,24 +293,24 @@ class Decoder(nn.Module):
 
         spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
-        # # Explicitly split the 162-dim vector into two halves of 81-dim each
-        # low, high = extracted_wm.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
-        # low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1,2)
-        # high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
-        # msg_avg = (low_msg + high_msg) / 2  # Average the two halves -> shape: [B, 1, 81]
-        msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1,2)
-        msg = self.msg_linear_out(msg)
-        # msg = self.msg_linear_out(msg_avg)
+        # Explicitly split the 162-dim vector into two halves of 81-dim each
+        low, high = extracted_wm.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
+        low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1,2)
+        high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
+        msg_avg = (low_msg + high_msg) / 2  # Average the two halves -> shape: [B, 1, 81]
+        # msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1,2)
+        # msg = self.msg_linear_out(msg)
+        msg = self.msg_linear_out(msg_avg)
 
         _, _, stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
-        # low_identity, high_identity = extracted_wm_identity.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
-        # low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
-        # high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(1, 2)
-        # msg_avg_identity = (low_msg_identity + high_msg_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
-        msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
-        msg_identity = self.msg_linear_out(msg_identity)
-        # msg_identity = self.msg_linear_out(msg_avg_identity)
+        low_identity, high_identity = extracted_wm_identity.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
+        low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
+        high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(1, 2)
+        msg_avg_identity = (low_msg_identity + high_msg_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
+        # msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
+        # msg_identity = self.msg_linear_out(msg_identity)
+        msg_identity = self.msg_linear_out(msg_avg_identity)
         del stft_result, stft_result_identity, extracted_wm, extracted_wm_identity
         return msg, msg_identity
 
