@@ -242,6 +242,7 @@ def main(configs):
     lambda_b = train_config["optimize"]["lambda_b"]
     num_save_img = train_config["iter"]["num_save_img"]
     sample_rate = process_config["audio"]["or_sample_rate"]
+    offset_samples = 2 * sample_rate
     global_step = 0
     train_len = len(train_audios_loader)
     for ep in range(1, epoch_num+1):
@@ -264,7 +265,8 @@ def main(configs):
             # ---------------- build watermark
             wav_matrix = sample["matrix"].to(device)
             msg = generate_random_msg(wav_matrix.size(0), msg_length, device)
-            watermark, carrier_wateramrked = encoder(wav_matrix, msg, global_step)
+            watermark, zeros_right = encoder(wav_matrix, msg, global_step)
+            waveform_length = (zeros_right - 1) * 160 + 320
             y_wm = wav_matrix + watermark
             decoded = decoder(y_wm, global_step)
             losses = loss.en_de_loss(wav_matrix, y_wm, msg, decoded)
@@ -279,7 +281,7 @@ def main(configs):
             if train_config["adv"]:
                 lambda_a = lambda_m = train_config["optimize"]["lambda_a"] # modify weights of m and a for better convergence
                 g_target_label_encoded = torch.full((b, 1), 1, device=device).float()
-                d_on_encoded_for_enc = discriminator(y_wm)
+                d_on_encoded_for_enc = discriminator(y_wm[:, offset_samples:-waveform_length])
                 # target label for encoded images should be 'cover', because we want to fool the discriminator
                 g_loss_adv = F.binary_cross_entropy_with_logits(d_on_encoded_for_enc, g_target_label_encoded)
                 sum_loss += lambda_a*g_loss_adv
@@ -294,12 +296,12 @@ def main(configs):
             
             if train_config["adv"]:
                 d_target_label_cover = torch.full((b, 1), 1, device=device).float()
-                d_on_cover = discriminator(wav_matrix)
+                d_on_cover = discriminator(wav_matrix[:, offset_samples:-waveform_length])
                 d_loss_on_cover = F.binary_cross_entropy_with_logits(d_on_cover, d_target_label_cover)
                 d_loss_on_cover.backward()
 
                 d_target_label_encoded = torch.full((b, 1), 0, device=device).float()
-                d_on_encoded = discriminator(y_wm.detach())
+                d_on_encoded = discriminator(y_wm[:, offset_samples:-waveform_length].detach())
                 # target label for encoded images should be 'encoded', because we want discriminator fight with encoder
                 d_loss_on_encoded = F.binary_cross_entropy_with_logits(d_on_encoded, d_target_label_encoded)
                 d_loss_on_encoded.backward()
@@ -380,7 +382,8 @@ def main(configs):
                 # ---------------- build watermark
                 wav_matrix = sample["matrix"].to(device)
                 msg = generate_random_msg(wav_matrix.size(0), msg_length, device)
-                watermark, carrier_wateramrked = encoder(wav_matrix, msg, global_step)
+                watermark, zeros_right = encoder(wav_matrix, msg, global_step)
+                waveform_length = (zeros_right - 1) * 160 + 320
                 y_wm = wav_matrix + watermark
                 decoded = decoder(y_wm, global_step)
                 losses = loss.en_de_loss(wav_matrix, y_wm, msg, decoded)
@@ -388,15 +391,15 @@ def main(configs):
                 if train_config["adv"]:
                     lambda_a = lambda_m = train_config["optimize"]["lambda_a"]
                     g_target_label_encoded = torch.full((b, 1), 1, device=device).float()
-                    d_on_encoded_for_enc = discriminator(y_wm)
+                    d_on_encoded_for_enc = discriminator(y_wm[:, offset_samples:-waveform_length])
                     g_loss_adv = F.binary_cross_entropy_with_logits(d_on_encoded_for_enc, g_target_label_encoded)
                 if train_config["adv"]:
                     d_target_label_cover = torch.full((b, 1), 1, device=device).float()
-                    d_on_cover = discriminator(wav_matrix)
+                    d_on_cover = discriminator(wav_matrix[:, offset_samples:-waveform_length])
                     d_loss_on_cover = F.binary_cross_entropy_with_logits(d_on_cover, d_target_label_cover)
 
                     d_target_label_encoded = torch.full((b, 1), 0, device=device).float()
-                    d_on_encoded = discriminator(y_wm.detach())
+                    d_on_encoded = discriminator(y_wm[:, offset_samples:-waveform_length].detach())
                     d_loss_on_encoded = F.binary_cross_entropy_with_logits(d_on_encoded, d_target_label_encoded)
                 
                 decoder_acc = [((decoded[0] >= 0).eq(msg >= 0).sum().float() / msg.numel()).item(), ((decoded[1] >= 0).eq(msg >= 0).sum().float() / msg.numel()).item()]
@@ -454,7 +457,8 @@ def main(configs):
             # ---------------- build watermark
             wav_matrix = sample["matrix"].to(device)
             msg = generate_random_msg(wav_matrix.size(0), msg_length, device)
-            watermark, carrier_wateramrked = encoder(wav_matrix, msg, global_step)
+            watermark, zeros_right = encoder(wav_matrix, msg, global_step)
+            waveform_length = (zeros_right - 1) * 160 + 320
             y_wm = wav_matrix + watermark
             decoded = decoder(y_wm, global_step)
             losses = loss.en_de_loss(wav_matrix, y_wm, msg, decoded)
@@ -462,15 +466,15 @@ def main(configs):
             if train_config["adv"]:
                 lambda_a = lambda_m = train_config["optimize"]["lambda_a"]
                 g_target_label_encoded = torch.full((b, 1), 1, device=device).float()
-                d_on_encoded_for_enc = discriminator(y_wm)
+                d_on_encoded_for_enc = discriminator(y_wm[:, offset_samples:-waveform_length])
                 g_loss_adv = F.binary_cross_entropy_with_logits(d_on_encoded_for_enc, g_target_label_encoded)
             if train_config["adv"]:
                 d_target_label_cover = torch.full((b, 1), 1, device=device).float()
-                d_on_cover = discriminator(wav_matrix)
+                d_on_cover = discriminator(wav_matrix[:, offset_samples:-waveform_length])
                 d_loss_on_cover = F.binary_cross_entropy_with_logits(d_on_cover, d_target_label_cover)
 
                 d_target_label_encoded = torch.full((b, 1), 0, device=device).float()
-                d_on_encoded = discriminator(y_wm.detach())
+                d_on_encoded = discriminator(y_wm[:, offset_samples:-waveform_length].detach())
                 d_loss_on_encoded = F.binary_cross_entropy_with_logits(d_on_encoded, d_target_label_encoded)
 
             decoder_acc = [((decoded[0] >= 0).eq(msg >= 0).sum().float() / msg.numel()).item(),
