@@ -5,6 +5,7 @@ adv: True
 path:
   raw_path: "/storage/seit-guohanqi/librispeech_dataset/LibriSpeech_wav"
 #  raw_path: "/home/yizhu/Data/LibriSpeech_wav"
+#  raw_path: "/home/yizhu/Data/LJSpeech-1.1"
   raw_path_test: "experiments/cloned_speechs"
   wm_speech: "./results/wm_speech"
   ckpt: "results/ckpt/"

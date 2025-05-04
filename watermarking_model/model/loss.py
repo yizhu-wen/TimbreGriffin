@@ -133,8 +133,8 @@ class Loss_identity(nn.Module):
     def en_de_loss(self, x, w_x, msg, rec_msg):
         embedding_loss = self.embedding_loss(x, w_x)
         msg_loss = self.msg_loss(msg, rec_msg[0]) + self.msg_loss(msg, rec_msg[1])
-        loudness_loss = self.tfloudness_loss(w_x.unsqueeze(1), x.unsqueeze(1))
-
+        # loudness_loss = self.tfloudness_loss(w_x.unsqueeze(1), x.unsqueeze(1))
+        loudness_loss = torch.tensor(0.0, device='cuda:0')
         return embedding_loss, msg_loss, loudness_loss
 
 
