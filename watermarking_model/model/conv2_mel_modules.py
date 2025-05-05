@@ -154,8 +154,8 @@ class Encoder(nn.Module):
         self.future_amt = int((train_config["watermark"]["future_amt_second"]*self.sampling_rate) // self.hop_length + 1)
         self.delay = True
         self.power = 1.0
-        self.vad = load_silero_vad()
-        self.vad_threshold = 0.50
+        # self.vad = load_silero_vad()
+        # self.vad_threshold = 0.50
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
@@ -240,26 +240,26 @@ class Encoder(nn.Module):
             y = self.stft.inverse(spect, phase).squeeze(1)
             del spect, phase, real_part, imag_part, all_watermark_stft
 
-            with torch.no_grad():
-                # Get chunk-level speech probabilities for the batch.
-                # The output shape should be [batch, num_chunks]
-                batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
-
-            # Threshold the probabilities to obtain a binary mask per chunk.
-            batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
-
-            # Upsample the chunk-level mask to a sample-level mask.
-            # Each chunk's decision is repeated for chunk_size samples.
-            sample_masks = torch.repeat_interleave(batch_chunk_mask, 512, dim=1).to(y.device)
-
-            # Since the upsampled mask might be longer than the actual audio length,
-            # slice the mask to match the original number of samples.
-            sample_length = x.shape[-1]
-            sample_masks = sample_masks[:, :sample_length]
-
-            # Apply the mask to the original audio to zero out non-speech regions.
-            masked_y = y * sample_masks
-            return masked_y, zeros_right.shape[-1]
+            # with torch.no_grad():
+            #     # Get chunk-level speech probabilities for the batch.
+            #     # The output shape should be [batch, num_chunks]
+            #     batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
+            #
+            # # Threshold the probabilities to obtain a binary mask per chunk.
+            # batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
+            #
+            # # Upsample the chunk-level mask to a sample-level mask.
+            # # Each chunk's decision is repeated for chunk_size samples.
+            # sample_masks = torch.repeat_interleave(batch_chunk_mask, 512, dim=1).to(y.device)
+            #
+            # # Since the upsampled mask might be longer than the actual audio length,
+            # # slice the mask to match the original number of samples.
+            # sample_length = x.shape[-1]
+            # sample_masks = sample_masks[:, :sample_length]
+            #
+            # # Apply the mask to the original audio to zero out non-speech regions.
+            # masked_y = y * sample_masks
+            return y, zeros_right.shape[-1]
         else:
             print("Not enough watermarking!!!!")
             return None
