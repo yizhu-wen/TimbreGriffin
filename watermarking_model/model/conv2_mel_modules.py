@@ -279,7 +279,7 @@ class Decoder(nn.Module):
         self.block = model_config["conv2"]["block"]
         self.EX = WatermarkExtracter(input_channel=2, hidden_dim=model_config["conv2"]["hidden_dim"], block=self.block)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
-        self.msg_linear_out = FCBlock(self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True))
+        self.msg_linear_out = FCBlock(self.win_dim, msg_length, activation=LeakyReLU(inplace=True))
 
     def forward(self, y, global_step):
         y_identity = y
