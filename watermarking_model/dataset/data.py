@@ -461,7 +461,8 @@ class WavDataset(Dataset):
 
         # For example, 2s * 16000 = 32000 frames
         # plus delay_amt_second and future_amt_second
-        self.min_length = int(32800 + self.delay_amt + self.future_amt)
+
+        self.min_length = int(2*self.original_sample_rate + self.delay_amt + self.future_amt)
 
         # Filter out short files
         self.wavs = self._filter_wavs()

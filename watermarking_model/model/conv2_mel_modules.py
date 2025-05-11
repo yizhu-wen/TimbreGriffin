@@ -293,24 +293,24 @@ class Decoder(nn.Module):
 
         spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
-        # Explicitly split the 162-dim vector into two halves of 81-dim each
-        low, high = extracted_wm.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
-        low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1,2)
-        high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
-        msg_avg = (low_msg + high_msg) / 2  # Average the two halves -> shape: [B, 1, 81]
-        # msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1,2)
-        # msg = self.msg_linear_out(msg)
-        msg = self.msg_linear_out(msg_avg)
+        # # Explicitly split the 162-dim vector into two halves of 81-dim each
+        # low, high = extracted_wm.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
+        # low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1,2)
+        # high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
+        # msg_avg = (low_msg + high_msg) / 2  # Average the two halves -> shape: [B, 1, 81]
+        msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1,2)
+        msg = self.msg_linear_out(msg)
+        # msg = self.msg_linear_out(msg_avg)
 
         _, _, stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
-        low_identity, high_identity = extracted_wm_identity.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
-        low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
-        high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(1, 2)
-        msg_avg_identity = (low_msg_identity + high_msg_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
-        # msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
-        # msg_identity = self.msg_linear_out(msg_identity)
-        msg_identity = self.msg_linear_out(msg_avg_identity)
+        # low_identity, high_identity = extracted_wm_identity.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
+        # low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
+        # high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(1, 2)
+        # msg_avg_identity = (low_msg_identity + high_msg_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
+        msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
+        msg_identity = self.msg_linear_out(msg_identity)
+        # msg_identity = self.msg_linear_out(msg_avg_identity)
         del stft_result, stft_result_identity, extracted_wm, extracted_wm_identity
         return msg, msg_identity
 
