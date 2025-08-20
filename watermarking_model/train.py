@@ -23,10 +23,14 @@ from torch.optim.lr_scheduler import StepLR
 from model.conv2_mel_modules import Encoder, Decoder, Discriminator, save_waveform, save_spectrum, save_spectrum_normal
 from dataset.data import WavDataset as MyDataset
 import tempfile
+import warnings
 import random
 import shutil
 from PIL import Image
 import torch.backends.cudnn as cudnn
+
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 def save_spectrogram_to_buffer(signal, sample_rate=16000):
     buf = BytesIO()
