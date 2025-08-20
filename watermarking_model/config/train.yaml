@@ -3,8 +3,8 @@ dataset: "librispeech"
 adv: True
 
 path:
-  raw_path: "/storage/seit-guohanqi/librispeech_dataset/LibriSpeech_wav"
-#  raw_path: "/home/yizhu/Data/LibriSpeech_wav"
+#  raw_path: "/storage/seit-guohanqi/librispeech_dataset/LibriSpeech_wav"
+  raw_path: "/home/yizhu/Data/LibriSpeech_wav"
 #  raw_path: "/home/yizhu/Data/LJSpeech-1.1"
   raw_path_test: "experiments/cloned_speechs"
   wm_speech: "./results/wm_speech"
@@ -17,14 +17,14 @@ watermark:
   future_amt_second: 0.5
 
 optimize:
-  lr: 0.00002
+  lr: 0.0001
   lambda_e: 1.
   lambda_m: 10.
   # lambda_m: 0.01
   lambda_no_m: 0.01
   lambda_a: 0.01
   lambda_b: 1.
-  batch_size: 4  # remote batch_size=4, local batch_size=2
+  batch_size: 2  # remote batch_size=4, local batch_size=2
   step_size: 5000 # large value means do not decay
   gamma: 0.98
   betas: [0.9, 0.98]
