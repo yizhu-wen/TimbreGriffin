@@ -27,7 +27,8 @@ import warnings
 import random
 import shutil
 from PIL import Image
-import torch.backends.cudnn as cudnn
+
+torch.use_deterministic_algorithms(True)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
