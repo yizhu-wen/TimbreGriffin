@@ -16,5 +16,6 @@ audio:
 
 mel:
   n_fft: 322
+#  n_fft: 320
   hop_length: 160
   win_length: 322
