@@ -41,7 +41,7 @@ optimize:
   train_size: 31000
 
 iter:
-  epoch: 5
+  epoch: 30
   # epoch: 100
   save_circle: 15
   show_circle: 1000
