@@ -273,7 +273,7 @@ def main(configs):
             wav_matrix = sample["matrix"].to(device)
             msg = generate_random_msg(wav_matrix.size(0), msg_length, device)
             watermark, zeros_right = encoder(wav_matrix, msg, global_step)
-            waveform_length = (zeros_right - 1) * hop_length
+            waveform_length = (zeros_right - 1) * hop_length if zeros_right > 1 else 0
             end = None if waveform_length == 0 else -waveform_length
             print("waveform_length", waveform_length)
             print("zeros_right", zeros_right)
