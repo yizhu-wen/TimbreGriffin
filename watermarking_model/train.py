@@ -289,6 +289,9 @@ def main(configs):
             if train_config["adv"]:
                 lambda_a = lambda_m = train_config["optimize"]["lambda_a"] # modify weights of m and a for better convergence
                 g_target_label_encoded = torch.full((b, 1), 1, device=device).float()
+                print("offset_samples", offset_samples)
+                print("end", end)
+                print("y_wm shape", y_wm[:, offset_samples:end].shape)
                 d_on_encoded_for_enc = discriminator(y_wm[:, offset_samples:end])
                 # target label for encoded images should be 'cover', because we want to fool the discriminator
                 g_loss_adv = F.binary_cross_entropy_with_logits(d_on_encoded_for_enc, g_target_label_encoded)
