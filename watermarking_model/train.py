@@ -275,6 +275,9 @@ def main(configs):
             watermark, zeros_right = encoder(wav_matrix, msg, global_step)
             waveform_length = (zeros_right - 1) * hop_length
             end = None if waveform_length == 0 else -waveform_length
+            print("waveform_length", waveform_length)
+            print("zeros_right", zeros_right)
+            print("hop_length", hop_length)
             y_wm = wav_matrix + watermark
             decoded = decoder(y_wm, global_step)
             losses = loss.en_de_loss(wav_matrix[:, offset_samples:end], y_wm[:, offset_samples:end], msg, decoded)
