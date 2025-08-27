@@ -277,7 +277,7 @@ def main(configs):
             end = None if waveform_length == 0 else -waveform_length
             y_wm = wav_matrix + watermark
             decoded = decoder(y_wm, global_step)
-            losses = loss.en_de_loss(wav_matrix[offset_samples:end], y_wm[offset_samples:end], msg, decoded)
+            losses = loss.en_de_loss(wav_matrix[:, offset_samples:end], y_wm[:, offset_samples:end], msg, decoded)
             #lamda_e = 1.
             #lamda_m = 10
             if global_step < pre_step:
@@ -395,7 +395,7 @@ def main(configs):
                 end = None if waveform_length == 0 else -waveform_length
                 y_wm = wav_matrix + watermark
                 decoded = decoder(y_wm, global_step)
-                losses = loss.en_de_loss(wav_matrix[offset_samples:end], y_wm[offset_samples:end], msg, decoded)
+                losses = loss.en_de_loss(wav_matrix[:, offset_samples:end], y_wm[:, offset_samples:end], msg, decoded)
                 # adv
                 if train_config["adv"]:
                     lambda_a = lambda_m = train_config["optimize"]["lambda_a"]
@@ -470,7 +470,7 @@ def main(configs):
             end = None if waveform_length == 0 else -waveform_length
             y_wm = wav_matrix + watermark
             decoded = decoder(y_wm, global_step)
-            losses = loss.en_de_loss(wav_matrix[offset_samples:end], y_wm[offset_samples:end], msg, decoded)
+            losses = loss.en_de_loss(wav_matrix[:, offset_samples:end], y_wm[:, offset_samples:end], msg, decoded)
             # adv
             if train_config["adv"]:
                 lambda_a = lambda_m = train_config["optimize"]["lambda_a"]

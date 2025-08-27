@@ -175,12 +175,12 @@ class Encoder(nn.Module):
         respecting future_amt and chunk-based offsets.
         """
 
-        zeros_right_len = input_stft.shape[3] - watermark_stft.shape[3] - (voice_prefilling + self.delay_amt)
+        zeros_right_len = input_stft.shape[3] - watermark_stft.shape[3] - (voice_prefilling + self.future_amt)
         if zeros_right_len < 0:
             # Edge case: won't happen if chunking logic is correct, but just to be safe
             zeros_right_len = 0
 
-        zeros_left = torch.zeros_like(input_stft[:, :, :, :voice_prefilling + self.delay_amt])
+        zeros_left = torch.zeros_like(input_stft[:, :, :, :voice_prefilling + self.future_amt])
         zeros_right = torch.zeros_like(input_stft[:, :, :, :zeros_right_len])
 
         actual_watermark = torch.cat([zeros_left, watermark_stft, zeros_right], dim=3) + EPS
