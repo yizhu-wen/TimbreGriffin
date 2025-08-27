@@ -249,7 +249,7 @@ def main(configs):
     num_save_img = train_config["iter"]["num_save_img"]
     sample_rate = process_config["audio"]["or_sample_rate"]
     hop_length = process_config["mel"]["hop_length"]
-    offset_samples = int(2.50 * sample_rate)
+    offset_samples = 40480  # ((204+50)-1)*160
     global_step = 0
     train_len = len(train_audios_loader)
     for ep in range(1, epoch_num+1):
