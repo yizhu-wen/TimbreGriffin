@@ -294,7 +294,8 @@ def main(configs):
                 g_target_label_encoded = torch.full((b, 1), 1, device=device).float()
                 print("offset_samples", offset_samples)
                 print("end", end)
-                print("y_wm shape", y_wm[:, offset_samples:end].shape)
+                print("y_wm shape", y_wm.shape)
+                print("y_wm_selected shape", y_wm[:, offset_samples:end].shape)
                 d_on_encoded_for_enc = discriminator(y_wm[:, offset_samples:end])
                 # target label for encoded images should be 'cover', because we want to fool the discriminator
                 g_loss_adv = F.binary_cross_entropy_with_logits(d_on_encoded_for_enc, g_target_label_encoded)
