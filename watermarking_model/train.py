@@ -275,9 +275,6 @@ def main(configs):
             watermark, zeros_right = encoder(wav_matrix, msg, global_step)
             waveform_length = (zeros_right - 1) * hop_length if zeros_right > 1 else 0
             end = None if waveform_length == 0 else -waveform_length
-            print("waveform_length", waveform_length)
-            print("zeros_right", zeros_right)
-            print("hop_length", hop_length)
             y_wm = wav_matrix + watermark
             decoded = decoder(y_wm, global_step)
             losses = loss.en_de_loss(wav_matrix[:, offset_samples:end], y_wm[:, offset_samples:end], msg, decoded)
@@ -292,10 +289,6 @@ def main(configs):
             if train_config["adv"]:
                 lambda_a = lambda_m = train_config["optimize"]["lambda_a"] # modify weights of m and a for better convergence
                 g_target_label_encoded = torch.full((b, 1), 1, device=device).float()
-                print("offset_samples", offset_samples)
-                print("end", end)
-                print("y_wm shape", y_wm.shape)
-                print("y_wm_selected shape", y_wm[:, offset_samples:end].shape)
                 d_on_encoded_for_enc = discriminator(y_wm[:, offset_samples:end])
                 # target label for encoded images should be 'cover', because we want to fool the discriminator
                 g_loss_adv = F.binary_cross_entropy_with_logits(d_on_encoded_for_enc, g_target_label_encoded)
