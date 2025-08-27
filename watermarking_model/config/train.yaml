@@ -14,7 +14,7 @@ path:
 
 watermark:
   length: 10
-  delay_amt_second: 0.05
+  delay_amt_second: 0.5
   future_amt_second: 0.5
 
 optimize:
@@ -41,7 +41,7 @@ optimize:
   train_size: 31000
 
 iter:
-  epoch: 30
+  epoch: 5
   # epoch: 100
   save_circle: 15
   show_circle: 1000
