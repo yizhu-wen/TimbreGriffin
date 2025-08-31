@@ -43,7 +43,7 @@ optimize:
 iter:
   epoch: 30
   # epoch: 100
-  save_circle: 15
+  save_circle: 5
   show_circle: 1000
   val_circle: 1000
   data_divider: 1

@@ -159,8 +159,8 @@ class Encoder(nn.Module):
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         #MLP for the input wm
-        self.msg_linear_in = FCBlock(msg_length, self.win_dim, activation=LeakyReLU(inplace=True))
-        # self.msg_linear_in = FCBlock(msg_length, self.win_dim // 2, activation=LeakyReLU(inplace=True))
+        # self.msg_linear_in = FCBlock(msg_length, self.win_dim, activation=LeakyReLU(inplace=True))
+        self.msg_linear_in = FCBlock(msg_length, self.win_dim // 2, activation=LeakyReLU(inplace=True))
 
         #stft transform
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
@@ -208,10 +208,10 @@ class Encoder(nn.Module):
             # torch.Size([B, 81, 1])
             # torch.Size([B, 1, 81, 1])
             # torch.Size([B, 1, 162, 201])
-            # watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 2,
-            #                                                                                 carrier_encoded.shape[3])
-            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 1,
+            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 2,
                                                                                             carrier_encoded.shape[3])
+            # watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 1,
+            #                                                                                 carrier_encoded.shape[3])
 
             concatenated_feature = torch.cat((carrier_encoded, stft_result[:, :, :,
                                                                i*self.delay_amt:self.voice_prefilling + i*self.delay_amt], watermark_encoded), dim=1)
@@ -297,23 +297,23 @@ class Decoder(nn.Module):
         spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
         # Explicitly split the 162-dim vector into two halves of 81-dim each
-        # low, high = extracted_wm.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
-        # low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1,2)
-        # high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
-        # msg_avg = (low_msg + high_msg) / 2  # Average the two halves -> shape: [B, 1, 81]
-        msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1,2)
-        msg = self.msg_linear_out(msg)
-        # msg = self.msg_linear_out(msg_avg)
+        low, high = extracted_wm.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
+        low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1,2)
+        high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
+        msg_avg = (low_msg + high_msg) / 2  # Average the two halves -> shape: [B, 1, 81]
+        # msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1,2)
+        # msg = self.msg_linear_out(msg)
+        msg = self.msg_linear_out(msg_avg)
 
         _, _, stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
-        # low_identity, high_identity = extracted_wm_identity.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
-        # low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
-        # high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(1, 2)
-        # msg_avg_identity = (low_msg_identity + high_msg_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
-        msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
-        msg_identity = self.msg_linear_out(msg_identity)
-        # msg_identity = self.msg_linear_out(msg_avg_identity)
+        low_identity, high_identity = extracted_wm_identity.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
+        low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
+        high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(1, 2)
+        msg_avg_identity = (low_msg_identity + high_msg_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
+        # msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
+        # msg_identity = self.msg_linear_out(msg_identity)
+        msg_identity = self.msg_linear_out(msg_avg_identity)
         del stft_result, stft_result_identity, extracted_wm, extracted_wm_identity
         return msg, msg_identity
 

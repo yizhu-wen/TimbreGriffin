@@ -14,21 +14,18 @@ import omegaconf
 
 
 class distortion(nn.Module):
-    def __init__(self, process_config, train_config):
+    def __init__(self, process_config):
         super(distortion, self).__init__()
-        self.device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.sample_rate = process_config["audio"]["or_sample_rate"]
-        self.resample_kernel1 = julius.ResampleFrac(self.sample_rate, 16000).to(self.device)
-        self.resample_kernel1_re = julius.ResampleFrac(16000, self.sample_rate).to(self.device)
+        self.resample_kernel1 = julius.ResampleFrac(self.sample_rate, 22050).to(self.device)
+        self.resample_kernel1_re = julius.ResampleFrac(22050, self.sample_rate).to(self.device)
         self.resample_kernel2 = julius.ResampleFrac(self.sample_rate, 8000).to(self.device)
         self.resample_kernel2_re = julius.ResampleFrac(8000, self.sample_rate,).to(self.device)
         self.augment = Compose([Mp3Compression(p=1.0, min_bitrate=64, max_bitrate=64)])
         self.band_lowpass = julius.LowPassFilter(2000/self.sample_rate).to(self.device)
         self.band_highpass = julius.HighPassFilter(500/self.sample_rate).to(self.device)
         self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"]).to(self.device)
-        # self.encodec = EncodecModel.encodec_model_24khz()
-        # self.n_bandwidth = train_config["audio_effects"]["encodec"]["n_bandwidth"]
-        self.audio_effects = dict(train_config["aug_weights"])
 
     def none(self, x):
         return x
@@ -144,7 +141,8 @@ class distortion(nn.Module):
     
     def modify_mel(self, y, ratio=50):
         num_samples = y.shape[2]
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         spect = spect*ratio/100
         self.stft.num_samples = num_samples
         y = self.stft.inverse(spect.squeeze(1), phase.squeeze(1))
@@ -152,7 +150,8 @@ class distortion(nn.Module):
     
     def crop_mel_front(self, y, ratio=50):
         num_samples = y.shape[2]
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         cut_len = int(fre_len*(ratio/100))
         spect = spect*(torch.cat([torch.zeros(_,cut_len,time_len),torch.ones(_,fre_len-cut_len,time_len)], dim=1).to(self.device))
@@ -160,7 +159,8 @@ class distortion(nn.Module):
     
     def crop_mel_back(self, y, ratio=50):
         num_samples = y.shape[2]
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         cut_len = int(fre_len*(ratio/100))
         spect = spect*(torch.cat([torch.ones(_,fre_len-cut_len,time_len),torch.zeros(_,cut_len,time_len)], dim=1).to(self.device))
@@ -168,7 +168,8 @@ class distortion(nn.Module):
     
     def crop_mel_wave_front(self, y, ratio=50):
         num_samples = y.shape[2]
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         cut_len = int(fre_len*(ratio/100))
         spect = spect*(torch.cat([torch.zeros(_,cut_len,time_len),torch.ones(_,fre_len-cut_len,time_len)], dim=1).to(self.device))
@@ -178,7 +179,8 @@ class distortion(nn.Module):
     
     def crop_mel_wave_back(self, y, ratio=50):
         num_samples = y.shape[2]
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         cut_len = int(fre_len*(ratio/100))
         spect = spect*(torch.cat([torch.ones(_,fre_len-cut_len,time_len),torch.zeros(_,cut_len,time_len)], dim=1).to(self.device))
@@ -188,7 +190,8 @@ class distortion(nn.Module):
     
     def crop_mel_position(self, y, ratio=1):
         assert ratio >= 1 and ratio <= 10, "a must be an integer between 1 and 10"
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         # cut_len = int(fre_len*(ratio/100))
         cut_len = int(fre_len*(1/10))
@@ -200,7 +203,8 @@ class distortion(nn.Module):
     def crop_mel_wave_position(self, y, ratio=1):
         num_samples = y.shape[2]
         assert ratio >= 1 and ratio <= 10, "a must be an integer between 1 and 10"
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         # cut_len = int(fre_len*(ratio/100))
         cut_len = int(fre_len*(1/10))
@@ -213,7 +217,8 @@ class distortion(nn.Module):
 
     def crop_mel_position_5(self, y, ratio=1):
         assert ratio >= 1 and ratio <= 20, "a must be an integer between 1 and 20"
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         # cut_len = int(fre_len*(ratio/100))
         cut_len = int(fre_len*(1/20))
@@ -225,7 +230,8 @@ class distortion(nn.Module):
     def crop_mel_wave_position_5(self, y, ratio=1):
         num_samples = y.shape[2]
         assert ratio >= 1 and ratio <= 20, "a must be an integer between 1 and 20"
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         # cut_len = int(fre_len*(ratio/100))
         cut_len = int(fre_len*(1/20))
@@ -237,7 +243,8 @@ class distortion(nn.Module):
     
     def crop_mel_position_20(self, y, ratio=1):
         assert ratio >= 1 and ratio <= 5, "a must be an integer between 1 and 5"
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         # cut_len = int(fre_len*(ratio/100))
         cut_len = int(fre_len*(1/5))
@@ -249,7 +256,8 @@ class distortion(nn.Module):
     def crop_mel_wave_position_20(self, y, ratio=1):
         num_samples = y.shape[2]
         assert ratio >= 1 and ratio <= 5, "a must be an integer between 1 and 5"
-        spect, phase = self.stft.transform(y)
+        yBT = self._as_BT(y)
+        spect, phase, _ = self.stft.transform(yBT)
         _, fre_len, time_len = spect.shape
         # cut_len = int(fre_len*(ratio/100))
         cut_len = int(fre_len*(1/5))
@@ -258,6 +266,13 @@ class distortion(nn.Module):
         self.stft.num_samples = num_samples
         y = self.stft.inverse(spect.squeeze(1), phase.squeeze(1))
         return y
+
+    # ----- helper (optional) -----
+    def _as_BT(self, x):  # [B,1,T] -> [B,T]
+        return x.squeeze(1) if x.dim() == 3 else x
+
+    def _as_B1T(self, x):  # [B,T] -> [B,1,T]
+        return x.unsqueeze(1) if x.dim() == 2 else x
 
     def forward(self, x, attack_choice=1, ratio=10):
         attack_functions = {
