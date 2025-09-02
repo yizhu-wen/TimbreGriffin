@@ -278,8 +278,9 @@ def main(configs):
             y_wm = wav_matrix + watermark
             decoded = decoder(y_wm, global_step)
             losses = loss.en_de_loss(wav_matrix[:, offset_samples:end], y_wm[:, offset_samples:end], msg, decoded)
-            #lamda_e = 1.
-            #lamda_m = 10
+            # lamda_e = 1.
+            # lamda_m = 10
+            # lamda_b = 1
             if global_step < pre_step:
                 sum_loss = lambda_m*losses[1]
             else:
