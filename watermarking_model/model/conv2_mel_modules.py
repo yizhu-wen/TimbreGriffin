@@ -258,7 +258,7 @@ class Encoder(nn.Module):
 
             # --- infer hop in ms from C, T, sr ---
             # chunks_per_sec = C * sr / T; hop_ms = 1000 / chunks_per_sec
-            hop_ms = 1000.0 * num_samples / (C * self.sampling_rate)
+            hop_ms = 1000.0 * x.shape[-1] / (C * self.sampling_rate)
 
             # If caller didn't fix counts, compute them from target ms
             if self.smooth_chunks is None:
@@ -288,7 +288,7 @@ class Encoder(nn.Module):
                 m_chunk = F.max_pool1d(z, kernel_size=2 * pad + 1, stride=1).squeeze(1)  # [B, C]
 
             # 5) Upsample to sample grid
-            m_up = F.interpolate(m_chunk.unsqueeze(1), size=T, mode='linear', align_corners=True).squeeze(1)  # [B, T]
+            m_up = F.interpolate(m_chunk.unsqueeze(1), size=x.shape[-1], mode='linear', align_corners=True).squeeze(1)  # [B, T]
 
             # 6) Floor ε so mask ∈ [ε, 1]
             soft_sample_masks = (self.floor_eps + (1.0 - self.floor_eps) * m_up).clamp_(0.0, 1.0)  # [B, T]
