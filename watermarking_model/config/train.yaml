@@ -39,7 +39,12 @@ optimize:
   lr_disc: 0.00002
   alpha: 10
   train_size: 31000
-
+  smooth_chunks: null
+  dilate_chunks: null
+  target_smooth_ms: 40
+  target_dilate_ms: 15
+  floor_eps: 0.2
+  tau: 0.15
 iter:
   epoch: 30
   # epoch: 100
