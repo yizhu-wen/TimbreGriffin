@@ -270,7 +270,7 @@ class Encoder(nn.Module):
                     dilate_chunks = 1
 
             # 2) Soft step around the threshold
-            m_chunk = torch.sigmoid((p - self.threshold) / self.tau)  # [B, C] in (0, 1)
+            m_chunk = torch.sigmoid((p - self.vad_threshold) / self.tau)  # [B, C] in (0, 1)
 
             # 3) Smooth in chunk space (moving average)
             if smooth_chunks > 1:
