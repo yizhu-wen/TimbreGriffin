@@ -307,9 +307,7 @@ class Encoder(nn.Module):
             # # 6) Floor ε so mask ∈ [ε, 1]
             # soft_sample_masks = (self.floor_eps + (1.0 - self.floor_eps) * m_up).clamp_(0.0, 1.0)  # [B, T]
 
-            wm = y-x
-            masked_wm = wm * soft_sample_masks
-            y = x + masked_wm
+            masked_y = y * soft_sample_masks
             # # Threshold the probabilities to obtain a binary mask per chunk.
             # batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
             #
@@ -324,7 +322,7 @@ class Encoder(nn.Module):
             # # Apply the mask to the original audio to zero out non-speech regions.
             # masked_y = y * sample_masks
 
-            return y, zeros_right.shape[-1]
+            return masked_y, zeros_right.shape[-1]
         else:
             print("Not enough watermarking!!!!")
             return None
