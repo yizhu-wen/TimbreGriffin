@@ -195,7 +195,7 @@ class Encoder(nn.Module):
         return actual_watermark, zeros_right
 
     def forward(self, x, msg, global_step):
-        num_samples = x.shape[-1]
+        self.stft.num_samples = x.shape[-1]
         _, _, stft_result = self.stft.transform(x)
         # Evaluate how many chunks we can process
         # 2s input + 0.5s calculation delay
@@ -238,8 +238,6 @@ class Encoder(nn.Module):
             mask=stft_result!=0
             all_watermark_stft = all_watermark_stft*mask + 0.0000001
 
-            self.stft.num_samples = num_samples
-
             # Recompute magnitude & phase
             real_part = all_watermark_stft[:, 0, :, :]
             imag_part = all_watermark_stft[:, 1, :, :]
@@ -258,7 +256,7 @@ class Encoder(nn.Module):
 
             # --- infer hop in ms from C, T, sr ---
             # chunks_per_sec = C * sr / T; hop_ms = 1000 / chunks_per_sec
-            hop_ms = 1000.0 * x.shape[-1] / (C * self.sampling_rate)
+            hop_ms = 1000.0 * self.stft.num_samples / (C * self.sampling_rate)
 
             # If caller didn't fix counts, compute them from target ms
             if self.smooth_chunks is None:
@@ -288,10 +286,26 @@ class Encoder(nn.Module):
                 m_chunk = F.max_pool1d(z, kernel_size=2 * pad + 1, stride=1).squeeze(1)  # [B, C]
 
             # 5) Upsample to sample grid
-            m_up = F.interpolate(m_chunk.unsqueeze(1), size=x.shape[-1], mode='linear', align_corners=True).squeeze(1)  # [B, T]
+            m_up = F.interpolate(m_chunk.unsqueeze(1), size=self.stft.num_samples, mode='linear', align_corners=True).squeeze(1)  # [B, T]
 
-            # 6) Floor ε so mask ∈ [ε, 1]
-            soft_sample_masks = (self.floor_eps + (1.0 - self.floor_eps) * m_up).clamp_(0.0, 1.0)  # [B, T]
+            # After computing m_up ...
+            frame_size = 512
+            rms = x.unfold(-1, frame_size, frame_size // 2)  # [B, num_frames, frame_size]
+            rms = rms.pow(2).mean(dim=-1).sqrt()  # [B, num_frames]
+            # Normalize RMS into [0,1] (prevent divide-by-zero)
+            rms = rms / (rms.max(dim=1, keepdim=True).values + 1e-8)
+
+            # Upsample RMS back to sample level and map to floor in [floor_min,floor_max].
+            dynamic_floor = F.interpolate(rms.unsqueeze(1), size=self.stft.num_samples,
+                                          mode='linear', align_corners=True).squeeze(1)
+            floor_min, floor_max = 0.05, 0.2
+            dynamic_floor = floor_min + (floor_max - floor_min) * dynamic_floor
+
+            # Now build the mask using this per-sample floor
+            soft_sample_masks = (dynamic_floor + (1.0 - dynamic_floor) * m_up).clamp_(0.0, 1.0)
+
+            # # 6) Floor ε so mask ∈ [ε, 1]
+            # soft_sample_masks = (self.floor_eps + (1.0 - self.floor_eps) * m_up).clamp_(0.0, 1.0)  # [B, T]
 
             masked_y = y * soft_sample_masks
             # # Threshold the probabilities to obtain a binary mask per chunk.
@@ -303,8 +317,7 @@ class Encoder(nn.Module):
             #
             # # Since the upsampled mask might be longer than the actual audio length,
             # # slice the mask to match the original number of samples.
-            # sample_length = x.shape[-1]
-            # sample_masks = sample_masks[:, :sample_length]
+            # sample_masks = sample_masks[:, :self.stft.num_samples]
 
             # # Apply the mask to the original audio to zero out non-speech regions.
             # masked_y = y * sample_masks
