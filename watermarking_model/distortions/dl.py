@@ -57,8 +57,8 @@ class distortion(nn.Module):
             y = x
         return y
 
-    def resample(self, x):
-        return x
+    # def resample(self, x):
+    #     return x
     
     def crop_front(self, x, cut_ratio=10):
         cut_len = int(x.shape[-1] * (cut_ratio/100))
@@ -90,7 +90,7 @@ class distortion(nn.Module):
         y = self.resample_kernel2_re(self.resample_kernel2(y))
         return y
     
-    def white_noise(self, y, ratio): # SNR = 10log(ps/pn)
+    def white_noise(self, y, ratio=10): # SNR = 10log(ps/pn)
         SNR = ratio
         mean = 0.
         RMS_s = torch.sqrt(torch.mean(y**2, dim=2))

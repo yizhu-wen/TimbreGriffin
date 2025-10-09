@@ -114,29 +114,6 @@ def save_waveform(a_tensor, flag='original'):
     # plt.savefig(os.path.join(root, flag + '_amplitude_spectrogram_from_waveform.png'), bbox_inches='tight', pad_inches=0.0)
 
 
-
-# def get_vocoder(device):
-#     with open("hifigan/config.json", "r") as f:
-#         config = json.load(f)
-#     config = hifigan.AttrDict(config)
-#     vocoder = hifigan.Generator(config)
-#     ckpt = torch.load("./hifigan/model/VCTK_V1/generator_v1")
-#     vocoder.load_state_dict(ckpt["generator"])
-#     vocoder.eval()
-#     vocoder.remove_weight_norm()
-#     vocoder.to(device)
-#     freeze_model_and_submodules(vocoder)
-#     return vocoder
-
-# def freeze_model_and_submodules(model):
-#     for param in model.parameters():
-#         param.requires_grad = False
-#
-#     for module in model.children():
-#         if isinstance(module, nn.Module):
-#             freeze_model_and_submodules(module)
-
-
 class Encoder(nn.Module):
     def __init__(self, process_config, model_config, train_config, msg_length):
         super(Encoder, self).__init__()

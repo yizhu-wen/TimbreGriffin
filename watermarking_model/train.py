@@ -107,7 +107,7 @@ def main(configs):
     )
 
     batch_size = train_config["optimize"]["batch_size"]
-    assert batch_size < len(train_audios)
+    assert batch_size <= len(train_audios)
     train_audios_loader = DataLoader(
         train_audios,
         batch_size=batch_size,
