@@ -384,7 +384,7 @@ DISTORTION_REGISTRY = {
     "benign_identity":      lambda wav, sr, rng, **kw: (AudioProcessor.benign_identity(wav, sr, rng=rng), {"note": "pure watermarked baseline"}),
     "benign_compression":   lambda wav, sr, rng, **kw: (AudioProcessor.benign_compression(wav, sr, rng=rng), {"codec": "mp3", "bitrate": "128k"}),
     "benign_resample":      lambda wav, sr, rng, **kw: (AudioProcessor.benign_resample(wav, sr, rng=rng), {"target_sr": 8000}),
-    "benign_reencode":      lambda wav, sr, rng, **kw: (AudioProcessor.benign_reencode(wav, sr, passes=1, rng=rng), {"passes": 1}),
+    "benign_reencode":      lambda wav, sr, rng, **kw: (AudioProcessor.benign_reencode(wav, sr, passes=3, rng=rng), {"passes": 3}),
     "benign_noise_suppression": lambda wav, sr, rng, **kw: (AudioProcessor.benign_noise_suppression(wav, sr, rng=rng), {"energy_threshold": 0.01}),
     "malicious_delete_0.3": lambda wav, sr, rng, **kw: AudioProcessor.malicious_delete(wav, sr, ratio=0.3, rng=rng),
     "malicious_silence_0.2":lambda wav, sr, rng, **kw: AudioProcessor.malicious_silence(wav, sr, ratio=0.2, rng=rng),
