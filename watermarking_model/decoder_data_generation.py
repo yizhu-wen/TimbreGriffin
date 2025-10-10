@@ -628,7 +628,9 @@ def build_dataset(
     # Stage B, distortions and metadata, in parallel
     index_entries = []
     errs = []
-    max_workers = max_workers or max(1, os.cpu_count() or 1)
+    max_workers = (max(1, os.cpu_count() or 1)
+                   if max_workers in (None, 0, -1)
+                   else max_workers)
     with ProcessPoolExecutor(
         max_workers=max_workers,
         initializer=_worker_init,
