@@ -323,7 +323,7 @@ class Decoder(nn.Module):
         # self.msg_linear_out = FCBlock(self.win_dim, msg_length, activation=LeakyReLU(inplace=True))
         self.msg_linear_out = FCBlock(self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True))
 
-    def forward(self, y, global_step):
+    def forward(self, y, global_step=1):
         y_identity = y
         # if global_step > self.vocoder_step:
         #     y_mel = self.mel_transform.mel_spectrogram(y.squeeze(1))
