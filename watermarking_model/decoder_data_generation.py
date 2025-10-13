@@ -1,25 +1,15 @@
 # voxceleb_decoder_dataset.py
 # Build a reproducible watermark-decoder dataset from VoxCeleb.
-# Your requested changes:
-# - Mirror the VoxCeleb layout under out_root: idXXXXX/videoid/
-# - For each video folder, pick exactly ONE eligible .wav, embed watermark, write benign_identity.wav as the pure watermarked audio
-# - Do NOT write original.wav or watermarked.wav
-# - Apply remaining benign_* and malicious_* ops in the same folder
-# - Store watermark bits in metadata.json and index them at the root
+# This version:
+# - Samples ACROSS FILES (not one-per-video)
+# - Per source file, creates out_root/<idXXXX>/<video_id>/<file_stem>/...
+# - Writes benign_identity.wav as the pure watermarked audio (no trim/pad/RMS)
+# - Applies the other 9 benign/malicious ops (POST_RMS_MATCH applies only to those)
+# - Preserves selection order in dataset_index.jsonl (even with parallel processing)
+# - Supports sequential or random selection via --selection
 #
-# Example output:
-# /data/voxceleb_decoder_train/
-# ├── id10001/
-# │   └── 1zcIwhmdeo4/
-# │       ├── benign_identity.wav
-# │       ├── benign_compression.wav
-# │       ├── benign_resample.wav
-# │       ├── malicious_delete_0.3.wav
-# │       ├── ...
-# │       └── metadata.json
-# ├── ...
-# ├── dataset_index.jsonl
-# └── meta.txt
+# Example leaf:
+# /data/voxceleb_decoder_train/id10001/1zcIwhmdeo4/00001/{benign_identity.wav, benign_resample.wav, ..., metadata.json}
 
 import os
 import json
@@ -38,7 +28,7 @@ from torchaudio.functional import resample as tf_resample
 
 import yaml
 # Replace with your actual module path that defines Encoder
-from model.conv2_mel_modules import Encoder, Decoder  # type: ignore
+from model.conv2_mel_modules import Encoder  # type: ignore
 
 # Optional codec support (benign_compression, benign_reencode)
 try:
@@ -51,10 +41,10 @@ except Exception:
 # Config
 # -----------------------------
 DEFAULT_SEED = 1337
-SAMPLE_COUNT = 3800
+SAMPLE_COUNT = 4000            # set -1 to process ALL eligible files
 ACCEPT_EXTS = {".wav", ".flac", ".mp3", ".m4a"}
 USE_GPU = True
-POST_RMS_MATCH = True  # applied to distorted ops, never to benign_identity
+POST_RMS_MATCH = True          # applied to distorted ops, never to benign_identity
 
 # -----------------------------
 # Utils
@@ -151,7 +141,6 @@ def min_length_from_sr(sr: int) -> int:
 
 def speaker_id_from_path(path: str) -> Optional[str]:
     parts = os.path.normpath(path).split(os.sep)
-    # VoxCeleb paths contain .../idXXXXX/VIDEOID/XXXX.wav
     for p in parts:
         if p.startswith("id") and p[2:].isdigit():
             return p
@@ -256,7 +245,7 @@ class AudioProcessor:
         return ensure_2d_mono(up)
 
     @staticmethod
-    def benign_reencode(waveform, sample_rate, passes=1, rng=None):
+    def benign_reencode(waveform, sample_rate, passes=3, rng=None):
         if not _HAVE_PYDUB:
             raise RuntimeError("pydub or ffmpeg not available for benign_reencode")
         x = ensure_2d_mono(waveform)
@@ -415,7 +404,7 @@ def load_random_segment_from_same_speaker(cur_path: str, target_len: int, rng: r
     return ensure_2d_mono(wav_d[:, start:start + target_len])
 
 # -----------------------------
-# Sampling: pick exactly one eligible .wav per video folder
+# Sampling: collect ELIGIBLE FILES (not one-per-video), then select
 # -----------------------------
 def find_audio_files(root: str) -> List[str]:
     out = []
@@ -426,36 +415,33 @@ def find_audio_files(root: str) -> List[str]:
                 out.append(os.path.join(dp, fn))
     return out
 
-def filter_by_min_length(path: str) -> bool:
+def is_eligible(path: str) -> bool:
     try:
         info = torchaudio.info(path)
-        sr = info.sample_rate
-        num = info.num_frames
-        return num > min_length_from_sr(sr)
+        return info.num_frames > min_length_from_sr(info.sample_rate)
     except Exception:
         return False
 
-def choose_one_per_parent(paths: List[str], seed: int) -> List[str]:
-    # Group by parent dir (video folder), choose one eligible file per group deterministically
-    groups: Dict[str, List[str]] = {}
-    for p in paths:
-        parent = os.path.dirname(p)
-        groups.setdefault(parent, []).append(p)
+def collect_eligible_files(root: str) -> List[str]:
+    return [p for p in find_audio_files(root) if is_eligible(p)]
 
-    chosen = []
-    for parent, files in groups.items():
-        eligible = [p for p in files if filter_by_min_length(p)]
-        if not eligible:
-            continue
-        rng = random.Random(int(hashlib.sha256((parent + str(seed)).encode()).hexdigest()[:16], 16))
-        eligible.sort()  # stable
-        chosen.append(rng.choice(eligible))
-    return chosen  # one file per video folder
-
-def sample_limit(files_one_per_parent: List[str], seed: int, k: int) -> List[str]:
-    if len(files_one_per_parent) <= k:
-        return files_one_per_parent
-    return deterministic_shuffle(files_one_per_parent, seed)[:k]
+def sample_files(files: List[str], k: int, seed: int, mode: str = "sequential") -> List[str]:
+    # Start from lexicographic path order to keep stable behavior
+    sorted_files = sorted(files)
+    if k is None or k < 0 or len(sorted_files) <= k:
+        return sorted_files
+    if mode == "sequential":
+        # TAKE FIRST k in path order
+        return sorted_files[:k]
+    elif mode == "random":
+        rng = random.Random(seed)
+        idxs = list(range(len(sorted_files)))
+        rng.shuffle(idxs)
+        sel = [sorted_files[i] for i in idxs[:k]]
+        # return in original path order to keep stable downstream ordering
+        return sorted(sel)
+    else:
+        raise ValueError(f"unknown selection mode: {mode}")
 
 # -----------------------------
 # Per process context
@@ -473,7 +459,7 @@ def _make_sample_rng(global_seed: int, sample_key: str) -> random.Random:
     return random.Random(int(h[:16], 16))
 
 # -----------------------------
-# Distortion worker for a single selected file
+# Distortion worker (per FILE folder)
 # -----------------------------
 @dataclass
 class SampleResult:
@@ -483,11 +469,11 @@ class SampleResult:
     meta_rel: str
     error: Optional[str] = None
 
-def _distort_and_write_metadata(in_path: str, rel_parent: str, bitstr: str, sr: int) -> SampleResult:
+def _distort_and_write_metadata(in_path: str, rel_dir: str, bitstr: str, sr: int) -> SampleResult:
     try:
         out_root = _process_ctx["out_root"]
-        rng = _make_sample_rng(_process_ctx["seed"], rel_parent)
-        sdir = os.path.join(out_root, rel_parent)  # idXXXXX/VIDEOID
+        rng = _make_sample_rng(_process_ctx["seed"], rel_dir)
+        sdir = os.path.join(out_root, rel_dir)   # idXXXX/VIDEOID/FILESTEM
         base_path = os.path.join(sdir, "benign_identity.wav")
 
         wm_wav, sr_chk = load_audio(base_path)
@@ -499,7 +485,6 @@ def _distort_and_write_metadata(in_path: str, rel_parent: str, bitstr: str, sr: 
         for name, fn in DISTORTION_REGISTRY.items():
             entry = {"name": name, "distorted_path": None, "error": None, "validation": None}
             try:
-                # Identity already written
                 if name == "benign_identity":
                     entry["distorted_path"] = "benign_identity.wav"
                     entry["validation"] = f"ok, pure watermarked baseline, in={shape_str(wm_wav)}, sr={sr}"
@@ -542,10 +527,10 @@ def _distort_and_write_metadata(in_path: str, rel_parent: str, bitstr: str, sr: 
         meta_path = os.path.join(sdir, "metadata.json")
         atomic_write_json(meta, meta_path)
 
-        sample_id = rel_parent.replace(os.sep, "/")
-        return SampleResult(True, sample_id, rel_parent + "/", os.path.join(rel_parent, "metadata.json"))
+        sample_id = rel_dir.replace(os.sep, "/")
+        return SampleResult(True, sample_id, rel_dir + "/", os.path.join(rel_dir, "metadata.json"))
     except Exception as e:
-        return SampleResult(False, rel_parent.replace(os.sep, "/"), "", "", error=str(e))
+        return SampleResult(False, rel_dir.replace(os.sep, "/"), "", "", error=str(e))
 
 # -----------------------------
 # Coordinator
@@ -559,6 +544,7 @@ def build_dataset(
     checkpoint_path: str,
     sample_count: int = SAMPLE_COUNT,
     seed: int = DEFAULT_SEED,
+    selection: str = "sequential",       # "sequential" or "random"
     max_workers: Optional[int] = None,
 ) -> None:
     set_global_seed(seed)
@@ -569,63 +555,74 @@ def build_dataset(
         raise ValueError(f"Your model watermark length is {enc_ctx.msg_len}, need at least 10")
     encode_fn = make_encoder_fn(enc_ctx)
 
-    # Discover all audio, pick one eligible per video folder, then limit to sample_count
-    all_files = find_audio_files(voxceleb_root)
-    one_per_parent = choose_one_per_parent(all_files, seed)
-    chosen = sample_limit(one_per_parent, seed, sample_count)
+    # Build pool of ELIGIBLE FILES (across the whole tree), then select
+    all_eligible_files = collect_eligible_files(voxceleb_root)
+    chosen_files = sample_files(all_eligible_files, sample_count, seed, mode=selection)
 
-    # Build a speaker->files map for donor selection
+    # speaker -> files map for donor selection
     speaker2files: Dict[str, List[str]] = {}
-    for p in all_files:
+    for p in all_eligible_files:
         spk = speaker_id_from_path(p)
         if spk:
             speaker2files.setdefault(spk, []).append(p)
 
-    # Bits assignment
+    # Bits assignment (deterministic cycle)
     def make_bit_pool(s: int) -> List[str]:
         pool = [format(i, "010b") for i in range(1024)]
         return deterministic_shuffle(pool, s)
     pool = make_bit_pool(seed)
-    bits_list = [pool[i % len(pool)] for i in range(len(chosen))]
+    bits_list = [pool[i % len(chosen_files)] for i in range(len(chosen_files))]
 
     # Provenance
     meta_txt = os.path.join(out_root, "meta.txt")
-    rel_parents = [os.path.relpath(os.path.dirname(p), voxceleb_root).replace(os.sep, "/") for p in chosen]
+    sel_rel_files = [os.path.relpath(p, voxceleb_root).replace(os.sep, "/") for p in chosen_files]
     meta_lines = [
         f"seed={seed}",
+        f"selection={selection}",
         f"voxceleb_root={voxceleb_root}",
         f"out_root={out_root}",
-        f"sample_count={len(chosen)}",
+        f"sample_count={len(chosen_files)}",
         f"build_time_unix={int(time.time())}",
         f"encoder_device={enc_ctx.device.type}",
         f"msg_len={enc_ctx.msg_len}",
-        "selected_parents=" + ",".join(rel_parents),
+        "selected_files=" + ",".join(sel_rel_files),
     ]
     atomic_write_bytes(("\n".join(meta_lines) + "\n").encode("utf-8"), meta_txt)
 
-    # Stage A, embed watermark and write benign_identity.wav inside mirrored folder
-    prepared: List[Tuple[str, str, str, int]] = []  # (in_path, rel_parent, bitstr, sr)
-    for in_path, bitstr in zip(chosen, bits_list):
+    # To preserve original selection order in the final index
+    order_map: Dict[str, int] = {}
+
+    # Stage A: embed watermark and write benign_identity.wav inside per-FILE folder
+    prepared: List[Tuple[str, str, str, int]] = []  # (in_path, rel_dir, bitstr, sr)
+    for idx, (in_path, bitstr) in enumerate(zip(chosen_files, bits_list)):
         try:
+            # Compute rel_dir consistently: idXXXX/VIDEOID/FILESTEM
+            rel_parent = os.path.relpath(os.path.dirname(in_path), voxceleb_root)   # idXXXX/VIDEOID
+            file_stem = os.path.splitext(os.path.basename(in_path))[0]              # e.g., 00001
+            rel_dir = os.path.join(rel_parent, file_stem)
+            rel_dir_id = rel_dir.replace(os.sep, "/")
+            # record order even if this one later fails
+            order_map[rel_dir_id] = order_map.get(rel_dir_id, len(order_map))
+
             wav, sr = load_audio(in_path)
             need = min_length_from_sr(sr)
             if wav.size(-1) <= need:
+                # skip if somehow peeked through eligibility
                 continue
-            rel_parent = os.path.relpath(os.path.dirname(in_path), voxceleb_root)  # idXXXXX/VIDEOID
-            sdir = os.path.join(out_root, rel_parent)
+
+            sdir = os.path.join(out_root, rel_dir)
             ensure_dir(sdir)
 
-            # per folder RNG to pad message tail deterministically
-            rng = _make_sample_rng(seed, rel_parent)
-            wm_wav = encode_fn(wav, sr, bitstr, rng)  # pure watermarked
+            rng = _make_sample_rng(seed, rel_dir_id)
+            wm_wav = encode_fn(wav, sr, bitstr, rng)  # pure watermarked (no pad/trim/RMS)
             save_wav(os.path.join(sdir, "benign_identity.wav"), wm_wav, sr)
 
-            prepared.append((in_path, rel_parent, bitstr, sr))
+            prepared.append((in_path, rel_dir, bitstr, sr))
         except Exception as e:
             with open(os.path.join(out_root, "errors_embed.txt"), "a", encoding="utf-8") as ef:
                 ef.write(f"{os.path.relpath(in_path, voxceleb_root)}\t{str(e)}\n")
 
-    # Stage B, distortions and metadata, in parallel
+    # Stage B: distortions + metadata in parallel
     index_entries = []
     errs = []
     max_workers = (max(1, os.cpu_count() or 1)
@@ -637,8 +634,8 @@ def build_dataset(
         initargs=(speaker2files, seed, voxceleb_root, out_root),
     ) as ex:
         futs = []
-        for in_path, rel_parent, bitstr, sr in prepared:
-            futs.append(ex.submit(_distort_and_write_metadata, in_path, rel_parent, bitstr, sr))
+        for in_path, rel_dir, bitstr, sr in prepared:
+            futs.append(ex.submit(_distort_and_write_metadata, in_path, rel_dir, bitstr, sr))
         for fu in as_completed(futs):
             res: SampleResult = fu.result()
             if res.ok:
@@ -646,14 +643,15 @@ def build_dataset(
             else:
                 errs.append((res.sample_id, res.error))
 
+    # Sort index_entries by original chosen order
+    index_entries.sort(key=lambda e: order_map.get(e["id"], 1 << 30))
+
     # Root index
     idx_path = os.path.join(out_root, "dataset_index.jsonl")
-    index_entries = sorted(index_entries, key=lambda x: x["id"])
     with open(idx_path, "w", encoding="utf-8") as f:
         for e in index_entries:
             f.write(json.dumps(e, ensure_ascii=False) + "\n")
 
-    # Optional error report
     if errs:
         with open(os.path.join(out_root, "errors.txt"), "w", encoding="utf-8") as f:
             for sid, err in errs:
@@ -664,7 +662,7 @@ def build_dataset(
     print(f"meta at  {meta_txt}")
 
 # -----------------------------
-# Loader
+# Loader (optional, for quick tests)
 # -----------------------------
 class DecoderDataset(torch.utils.data.Dataset):
     """
@@ -733,7 +731,9 @@ if __name__ == "__main__":
     ap.add_argument("--train_cfg", type=str, default="./config/train.yaml")
     ap.add_argument("--ckpt", type=str, required=True, help="Path to your encoder checkpoint .pth.tar")
     ap.add_argument("--seed", type=int, default=DEFAULT_SEED)
-    ap.add_argument("--count", type=int, default=SAMPLE_COUNT, help="number of video folders to process")
+    ap.add_argument("--count", type=int, default=SAMPLE_COUNT, help="number of FILES to process; set -1 for ALL eligible")
+    ap.add_argument("--selection", type=str, default="sequential", choices=["sequential", "random"],
+                    help="How to pick --count files from eligible pool")
     ap.add_argument("--workers", type=int, default=None)
     args = ap.parse_args()
 
@@ -746,5 +746,6 @@ if __name__ == "__main__":
         checkpoint_path=args.ckpt,
         sample_count=args.count,
         seed=args.seed,
+        selection=args.selection,
         max_workers=args.workers,
     )
