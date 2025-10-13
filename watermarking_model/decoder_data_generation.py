@@ -571,7 +571,8 @@ def build_dataset(
         pool = [format(i, "010b") for i in range(1024)]
         return deterministic_shuffle(pool, s)
     pool = make_bit_pool(seed)
-    bits_list = [pool[i % len(chosen_files)] for i in range(len(chosen_files))]
+    # bits_list = [pool[i % len(chosen_files)] for i in range(len(chosen_files))]
+    bits_list = [pool[i % len(pool)] for i in range(len(chosen_files))]
 
     # Provenance
     meta_txt = os.path.join(out_root, "meta.txt")
