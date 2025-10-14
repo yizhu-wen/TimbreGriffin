@@ -144,7 +144,6 @@ class UnifiedDecoderDataset(Dataset):
             print("root", self.root)
             print("e", e["metadata_path"])
 
-
             base_dir = os.path.join(self.root, e["dirpath"])
             meta = json.load(open(meta_path, "r", encoding="utf-8"))
             bits = meta["watermark_bits"]
