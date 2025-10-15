@@ -8,6 +8,7 @@ os.makedirs(val_dir, exist_ok=True)
 
 # List and sort all wav files
 wav_files = sorted([f for f in os.listdir(train_dir) if f.endswith(".wav")])
+print("len(wav_files)", len(wav_files))
 
 # Select last N
 to_move = wav_files[-num_to_move:]
