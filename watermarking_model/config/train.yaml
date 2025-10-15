@@ -4,7 +4,8 @@ adv: True
 
 path:
 #  raw_path: "/home/yizhu/Data/LibriSpeech_wav"
-  raw_path: "/dataset/LibriSpeech_wav"
+#  raw_path: "/dataset/LibriSpeech_wav"
+  raw_path: "/dataset/merge_libri_voxcel"
 #  raw_path: "/home/yizhu/Data/LJSpeech-1.1"
   raw_path_test: "experiments/cloned_speechs"
   wm_speech: "./results/wm_speech"
@@ -47,7 +48,7 @@ optimize:
   tau: 0.15
 
 iter:
-  epoch: 30
+  epoch: 60
   save_circle: 5
   show_circle: 1000
   val_circle: 1000
