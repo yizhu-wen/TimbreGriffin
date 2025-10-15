@@ -5,19 +5,23 @@ import hashlib
 import json
 import os
 import random
+from collections import defaultdict
+from typing import List, Tuple, Dict
+
 import numpy as np
 import torch
 import torchaudio
 import yaml
-from collections import defaultdict
-from typing import List, Tuple, Dict
-from datetime import datetime
 from torch.utils.data import Dataset, DataLoader
 from tqdm.auto import tqdm
 
+# Replace with your actual module path
 from model.conv2_mel_modules import Decoder  # type: ignore
 
 
+# ---------------------------
+# Repro and helpers
+# ---------------------------
 def set_seed(seed: int = 1337):
     random.seed(seed)
     np.random.seed(seed)
@@ -55,14 +59,14 @@ def to_batch_1T(x_list: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]
         if pad > 0:
             w = torch.nn.functional.pad(w, (0, pad))
         padded.append(w)
-    x = torch.cat(padded, dim=0)
+    x = torch.cat(padded, dim=0)  # [B, T]
     return x, lengths
 
 
 def try_decode(decoder, x_batch: torch.Tensor) -> torch.Tensor:
     # Always feed [B, T] to match your decoder forward
     decoder.eval()
-    with torch.inference_mode():
+    with torch.no_grad():
         out = decoder(x_batch)
     if isinstance(out, (list, tuple)):
         out = out[0]
@@ -167,7 +171,6 @@ class InferenceDecoderDataset(Dataset):
 def collate(batch):
     # load audio here to parallelize with num_workers
     waves, bits, ops, keys, is_benigns = [], [], [], [], []
-
     for wav_path, bitstr, op, is_b in batch:
         w, sr = load_wav(wav_path)
         waves.append(w)
@@ -212,19 +215,10 @@ def evaluate(
 
     # Dataset / Loader
     ds = InferenceDecoderDataset(index_file, minlen_rule=minlen_rule)
-
-    # Pre-cache unique bit vectors ONCE
-    bits_cache = {}
-    for itm in ds.items:
-        b = itm["bits"]
-        if b not in bits_cache:
-            bits_cache[b] = bits_to_vec(b, device)  # tensor on device
-
     dl = DataLoader(
         ds,
         batch_size=batch_size,
         shuffle=False,
-        pin_memory=True,
         num_workers=num_workers,
         collate_fn=collate,
     )
@@ -242,12 +236,11 @@ def evaluate(
             for w, k in zip(waves, keys)
         ]
         x, _ = to_batch_1T(waves_c)
-        x = x.to(device, non_blocking=True)
+        x = x.to(device)
 
         # targets
         K = len(bits_list[0])
-        # tgt = torch.stack([bits_to_vec(b, device) for b in bits_list], dim=0)
-        tgt = torch.stack([bits_cache[b] for b in bits_list], dim=0)
+        tgt = torch.stack([bits_to_vec(b, device) for b in bits_list], dim=0)
 
         # predict
         out = try_decode(decoder, x)
@@ -347,19 +340,6 @@ def main():
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--save_json", type=str, default="")
     args = ap.parse_args()
-    # Build a timestamped output path if --save_json is provided
-    if args.save_json:
-        ts = datetime.now().strftime("%Y-%m-%d_%H_%M_%S")  # local time
-        base, ext = os.path.splitext(args.save_json)
-        if "{ts}" in args.save_json or "{timestamp}" in args.save_json:
-            save_json = args.save_json.replace("{ts}", ts).replace("{timestamp}", ts)
-        elif ext.lower() == ".json":
-            save_json = f"{base}_{ts}{ext}"
-        else:
-            save_json = f"{args.save_json}_{ts}.json"
-        out_dir = os.path.dirname(save_json)
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
 
     set_seed(args.seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
