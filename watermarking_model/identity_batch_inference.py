@@ -431,7 +431,7 @@ checkpoint = torch.load(checkpoint_path, map_location=device)
 encoder.load_state_dict(checkpoint["encoder"])
 decoder.load_state_dict(checkpoint["decoder"])
 
-train_config["path"]["raw_path"] = "/home/yizhu/Data/VoxCeleb_wav"
+train_config["path"]["raw_path"] = "/dataset/VoxCeleb_wav"
 dev_audios = MyDataset(
     process_config=process_config, train_config=train_config, flag="test"
 )
