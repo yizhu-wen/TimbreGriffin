@@ -3,10 +3,10 @@ import shutil
 from pathlib import Path
 
 src_dirs = [
-    Path("/dataset/LibriSpeech_wav/test"),
-    Path("/dataset/VoxCeleb_wav/test"),
+    Path("/dataset/LibriSpeech_wav/val"),
+    Path("/dataset/VoxCeleb_wav/val"),
 ]
-dest_dir = Path("/dataset/merge_libri_voxcel/test")
+dest_dir = Path("/dataset/merge_libri_voxcel/val")
 dest_dir.mkdir(parents=True, exist_ok=True)
 
 for src in src_dirs:
@@ -22,5 +22,3 @@ for src in src_dirs:
         shutil.copy2(wav_file, target)
 
 print("✅ Merge completed successfully!")
-
-
