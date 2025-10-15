@@ -139,16 +139,11 @@ def crop_or_pad_fixed(
 # ---------------------------
 class UnifiedDecoderDataset(Dataset):
     def __init__(self, index_file: str):
-        print("index_file", index_file)
         self.root = os.path.dirname(index_file)
         entries = [json.loads(l) for l in open(index_file, "r", encoding="utf-8")]
         items = []
         for e in entries:
             meta_path = os.path.join(self.root, e["metadata_path"])
-
-            print("root", self.root)
-            print("e", e["metadata_path"])
-
             base_dir = os.path.join(self.root, e["dirpath"])
             meta = json.load(open(meta_path, "r", encoding="utf-8"))
             bits = meta["watermark_bits"]

@@ -642,15 +642,7 @@ DISTORTION_REGISTRY = {
     ),
     "benign_phone_recording_30": lambda wav, sr, rng, **kw: (
         AudioProcessor.benign_phone_recording(wav, sr, snr_db=30),
-        {"snr_db": 30, "codec": "g722"},
-    ),
-    "benign_phone_recording_10": lambda wav, sr, rng, **kw: (
-        AudioProcessor.benign_phone_recording(wav, sr, snr_db=10),
-        {"snr_db": 10, "codec": "g722"},
-    ),
-    "benign_phone_recording_0": lambda wav, sr, rng, **kw: (
-        AudioProcessor.benign_phone_recording(wav, sr, snr_db=0),
-        {"snr_db": 0, "codec": "g722"},
+        {"snr_db": 20, "codec": "g722"},
     ),
     "malicious_delete_0.3": lambda wav, sr, rng, **kw: AudioProcessor.malicious_delete(
         wav, sr, ratio=0.3, rng=rng
