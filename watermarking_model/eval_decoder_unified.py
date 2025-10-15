@@ -18,9 +18,6 @@ from tqdm.auto import tqdm
 from model.conv2_mel_modules import Decoder  # type: ignore
 
 
-# ---------------------------
-# Repro and helpers
-# ---------------------------
 def set_seed(seed: int = 1337):
     random.seed(seed)
     np.random.seed(seed)
