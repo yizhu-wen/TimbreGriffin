@@ -2,23 +2,24 @@
 # Unified training with balanced batches, safe input shapes, deterministic cropping,
 # tqdm progress bars, per epoch accuracy, per operation accuracy, and Weights & Biases logging.
 
-import os
-import json
-import math
-import wandb
-import random
 import hashlib
 import itertools
-from typing import List, Tuple, Dict
+import json
+import math
+import os
+import random
 from collections import defaultdict
+from typing import List, Tuple, Dict
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, Sampler
 import torchaudio
 import yaml
+from torch.utils.data import Dataset, DataLoader, Sampler
 from tqdm.auto import tqdm
+
+import wandb
 
 # Replace with your actual module path
 from model.conv2_mel_modules import Encoder, Decoder  # type: ignore
@@ -74,7 +75,9 @@ def apply_flip(vec: torch.Tensor, key: str) -> torch.Tensor:
         return out
     outs = []
     for i in range(vec.size(0)):
-        m = torch.from_numpy(flip_mask_for_key(vec.size(1), f"{key}:{i}")).to(vec.device)
+        m = torch.from_numpy(flip_mask_for_key(vec.size(1), f"{key}:{i}")).to(
+            vec.device
+        )
         x = vec[i].clone()
         x[m] = -x[m]
         outs.append(x)
@@ -112,7 +115,9 @@ def bit_accuracy(pred: torch.Tensor, target: torch.Tensor) -> float:
 # ---------------------------
 # Deterministic cropping
 # ---------------------------
-def crop_or_pad_fixed(w: torch.Tensor, max_samples: int, key: str, epoch: int, center: bool = False) -> torch.Tensor:
+def crop_or_pad_fixed(
+    w: torch.Tensor, max_samples: int, key: str, epoch: int, center: bool = False
+) -> torch.Tensor:
     if max_samples <= 0:
         return w
     T = w.size(-1)
@@ -125,7 +130,7 @@ def crop_or_pad_fixed(w: torch.Tensor, max_samples: int, key: str, epoch: int, c
             h = hashlib.sha256(f"{key}|{epoch}".encode("utf-8")).hexdigest()
             rng = random.Random(int(h[:16], 16))
             start = rng.randint(0, T - max_samples)
-        return w[:, start:start + max_samples]
+        return w[:, start : start + max_samples]
     return torch.nn.functional.pad(w, (0, max_samples - T))
 
 
@@ -153,18 +158,19 @@ class UnifiedDecoderDataset(Dataset):
                 path = os.path.join(base_dir, op["distorted_path"])
                 try:
                     info = torchaudio.info(path)
-                    if info.num_frames < int(2*info.sample_rate + 0.5*info.sample_rate + 0.5*info.sample_rate):
+                    if info.num_frames < int(
+                        2 * info.sample_rate
+                        + 0.5 * info.sample_rate
+                        + 0.5 * info.sample_rate
+                    ):
                         continue  # drop too-short item
                 except Exception:
                     continue
                 name = op["name"]
                 is_benign = name.startswith("benign_")
-                items.append({
-                    "wav_path": path,
-                    "bits": bits,
-                    "op": name,
-                    "is_benign": is_benign
-                })
+                items.append(
+                    {"wav_path": path, "bits": bits, "op": name, "is_benign": is_benign}
+                )
         if len(items) == 0:
             raise RuntimeError("No audio items found in index")
         self.items = items
@@ -184,7 +190,13 @@ class UnifiedDecoderDataset(Dataset):
 # Balanced batch sampler
 # ---------------------------
 class BalancedBatchSampler(Sampler[List[int]]):
-    def __init__(self, benign_idxs: List[int], malicious_idxs: List[int], batch_size: int, benign_ratio: float = 0.5):
+    def __init__(
+        self,
+        benign_idxs: List[int],
+        malicious_idxs: List[int],
+        batch_size: int,
+        benign_ratio: float = 0.5,
+    ):
         assert 0.0 < benign_ratio < 1.0
         self.benign_idxs = list(benign_idxs)
         self.malicious_idxs = list(malicious_idxs)
@@ -196,7 +208,12 @@ class BalancedBatchSampler(Sampler[List[int]]):
         if self.m_count < 1:
             self.m_count = 1
             self.b_count = batch_size - 1
-        self.num_batches = math.ceil(max(len(self.benign_idxs) / self.b_count, len(self.malicious_idxs) / self.m_count))
+        self.num_batches = math.ceil(
+            max(
+                len(self.benign_idxs) / self.b_count,
+                len(self.malicious_idxs) / self.m_count,
+            )
+        )
 
     def __iter__(self):
         rng = random.Random()
@@ -207,7 +224,9 @@ class BalancedBatchSampler(Sampler[List[int]]):
         b_cycle = itertools.cycle(b)
         m_cycle = itertools.cycle(m)
         for _ in range(self.num_batches):
-            batch = [next(b_cycle) for _ in range(self.b_count)] + [next(m_cycle) for _ in range(self.m_count)]
+            batch = [next(b_cycle) for _ in range(self.b_count)] + [
+                next(m_cycle) for _ in range(self.m_count)
+            ]
             rng.shuffle(batch)
             yield batch
 
@@ -218,7 +237,9 @@ class BalancedBatchSampler(Sampler[List[int]]):
 # ---------------------------
 # Train and validate
 # ---------------------------
-def train_one_epoch(decoder, optimizer, device, loader, msg_len, max_samples: int, epoch: int) -> Dict[str, float]:
+def train_one_epoch(
+    decoder, optimizer, device, loader, msg_len, max_samples: int, epoch: int
+) -> Dict[str, float]:
     loss_fn = nn.MSELoss()
     decoder.train()
 
@@ -227,7 +248,10 @@ def train_one_epoch(decoder, optimizer, device, loader, msg_len, max_samples: in
 
     pbar = tqdm(loader, total=len(loader), desc=f"train [epoch {epoch}]", leave=False)
     for waves, bits_list, ops, keys, is_benigns in pbar:
-        waves_c = [crop_or_pad_fixed(w, max_samples, key=k, epoch=epoch, center=False) for w, k in zip(waves, keys)]
+        waves_c = [
+            crop_or_pad_fixed(w, max_samples, key=k, epoch=epoch, center=False)
+            for w, k in zip(waves, keys)
+        ]
         x, _ = to_batch_1T(waves_c)
         x = x.to(device)
 
@@ -269,7 +293,10 @@ def evaluate(decoder, device, loader, msg_len, max_samples: int) -> Dict[str, ob
 
     pbar = tqdm(loader, total=len(loader), desc="eval", leave=False)
     for waves, bits_list, ops, keys, is_benigns in pbar:
-        waves_c = [crop_or_pad_fixed(w, max_samples, key=k, epoch=0, center=True) for w, k in zip(waves, keys)]
+        waves_c = [
+            crop_or_pad_fixed(w, max_samples, key=k, epoch=0, center=True)
+            for w, k in zip(waves, keys)
+        ]
         x, _ = to_batch_1T(waves_c)
         x = x.to(device)
 
@@ -321,14 +348,15 @@ def evaluate(decoder, device, loader, msg_len, max_samples: int) -> Dict[str, ob
 # WandB helpers
 # ---------------------------
 def _sanitize_key(name: str) -> str:
-    return (
-        name.replace("/", "_")
-            .replace(" ", "_")
-            .replace(".", "_")
-            .replace(":", "_")
-    )
+    return name.replace("/", "_").replace(" ", "_").replace(".", "_").replace(":", "_")
 
-def log_epoch_to_wandb(ep: int, train_stats: Dict[str, float], eval_stats: Dict[str, object], optimizer: torch.optim.Optimizer):
+
+def log_epoch_to_wandb(
+    ep: int,
+    train_stats: Dict[str, float],
+    eval_stats: Dict[str, object],
+    optimizer: torch.optim.Optimizer,
+):
     # Scalars
     lr = None
     for pg in optimizer.param_groups:
@@ -365,6 +393,7 @@ def log_epoch_to_wandb(ep: int, train_stats: Dict[str, float], eval_stats: Dict[
 # ---------------------------
 def main():
     import argparse
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--index_file", type=str, required=True)
     ap.add_argument("--eval_index_file", type=str, required=True)
@@ -378,13 +407,20 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--benign_ratio", type=float, default=0.5)
     ap.add_argument("--seed", type=int, default=1337)
-    ap.add_argument("--max_samples", type=int, default=176000, help="cap per waveform, samples")
+    ap.add_argument(
+        "--max_samples", type=int, default=176000, help="cap per waveform, samples"
+    )
 
     # New: wandb config
     ap.add_argument("--wandb_project", type=str, default="wm-decoder")
     ap.add_argument("--wandb_entity", type=str, default=None)
     ap.add_argument("--wandb_run", type=str, default=None)
-    ap.add_argument("--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"])
+    ap.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="online",
+        choices=["online", "offline", "disabled"],
+    )
     ap.add_argument("--wandb_tags", type=str, default="", help="comma-separated tags")
 
     args = ap.parse_args()
@@ -435,15 +471,29 @@ def main():
 
     train_dataset = UnifiedDecoderDataset(args.index_file)
     test_dataset = UnifiedDecoderDataset(args.eval_index_file)
-    train_sampler = BalancedBatchSampler(train_dataset.benign_idxs, train_dataset.malicious_idxs, args.batch_size, benign_ratio=args.benign_ratio)
-    test_sampler = BalancedBatchSampler(test_dataset.benign_idxs, test_dataset.malicious_idxs, args.batch_size, benign_ratio=args.benign_ratio)
+    train_sampler = BalancedBatchSampler(
+        train_dataset.benign_idxs,
+        train_dataset.malicious_idxs,
+        args.batch_size,
+        benign_ratio=args.benign_ratio,
+    )
+    test_sampler = BalancedBatchSampler(
+        test_dataset.benign_idxs,
+        test_dataset.malicious_idxs,
+        args.batch_size,
+        benign_ratio=args.benign_ratio,
+    )
 
     def collate(batch):
         waves, bits, ops, keys, is_benigns = zip(*batch)
         return list(waves), list(bits), list(ops), list(keys), list(is_benigns)
 
-    train_loader = DataLoader(train_dataset, batch_sampler=train_sampler, num_workers=4, collate_fn=collate)
-    test_loader = DataLoader(test_dataset, batch_sampler=test_sampler, num_workers=4, collate_fn=collate)
+    train_loader = DataLoader(
+        train_dataset, batch_sampler=train_sampler, num_workers=4, collate_fn=collate
+    )
+    test_loader = DataLoader(
+        test_dataset, batch_sampler=test_sampler, num_workers=4, collate_fn=collate
+    )
 
     # Quick dataset stats to W&B
     wandb.summary["train_size"] = len(train_dataset)
@@ -453,23 +503,38 @@ def main():
     wandb.summary["test_benign"] = len(test_dataset.benign_idxs)
     wandb.summary["test_malicious"] = len(test_dataset.malicious_idxs)
 
-    optimizer = torch.optim.Adam(decoder.parameters(),
-                                 betas=(0.9, 0.98),
-                                 eps=1e-9,
-                                 weight_decay=0.0,
-                                 lr=args.lr)
+    optimizer = torch.optim.Adam(
+        decoder.parameters(), betas=(0.9, 0.98), eps=1e-9, weight_decay=0.0, lr=args.lr
+    )
 
     for ep in range(1, args.epochs + 1):
-        train_stats = train_one_epoch(decoder, optimizer, device, train_loader, msg_len, args.max_samples, epoch=ep)
+        train_stats = train_one_epoch(
+            decoder,
+            optimizer,
+            device,
+            train_loader,
+            msg_len,
+            args.max_samples,
+            epoch=ep,
+        )
         eval_stats = evaluate(decoder, device, test_loader, msg_len, args.max_samples)
 
         # epoch summary to stdout
-        print(f"[epoch {ep}] train_loss {train_stats['loss']:.4f}, "
-              f"benign_acc {eval_stats['benign_acc']:.4f}, malicious_acc {eval_stats['malicious_acc']:.4f}")
+        print(
+            f"[epoch {ep}] train_loss {train_stats['loss']:.4f}, "
+            f"benign_acc {eval_stats['benign_acc']:.4f}, malicious_acc {eval_stats['malicious_acc']:.4f}"
+        )
 
         # per operation overview to stdout
-        ops_sorted = sorted(eval_stats["per_op_acc"].items(), key=lambda kv: kv[1], reverse=True)
-        head = ", ".join([f"{name}: {acc:.3f} [n={eval_stats['per_op_count'][name]}]" for name, acc in ops_sorted])
+        ops_sorted = sorted(
+            eval_stats["per_op_acc"].items(), key=lambda kv: kv[1], reverse=True
+        )
+        head = ", ".join(
+            [
+                f"{name}: {acc:.3f} [n={eval_stats['per_op_count'][name]}]"
+                for name, acc in ops_sorted
+            ]
+        )
         print(f"[epoch {ep}] per_op_acc [{head}]")
 
         # log to W&B
