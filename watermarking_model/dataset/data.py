@@ -105,10 +105,6 @@ class WavDataset(Dataset):
             chunk_frames = int(info.num_frames * self.data_percentage)
             if chunk_frames >= self.min_length:
                 valid_wavs.append(audio_name)
-            else:
-                # Avoid spamming prints if many files are short
-                # print(f"{audio_name} is too short.")
-                pass
         return valid_wavs
 
     def __len__(self):
