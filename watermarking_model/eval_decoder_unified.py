@@ -5,17 +5,16 @@ import hashlib
 import json
 import os
 import random
-from collections import defaultdict
-from typing import List, Tuple, Dict
-
 import numpy as np
 import torch
 import torchaudio
 import yaml
+from collections import defaultdict
+from typing import List, Tuple, Dict
+from datetime import datetime
 from torch.utils.data import Dataset, DataLoader
 from tqdm.auto import tqdm
 
-# Replace with your actual module path
 from model.conv2_mel_modules import Decoder  # type: ignore
 
 
@@ -357,6 +356,19 @@ def main():
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--save_json", type=str, default="")
     args = ap.parse_args()
+    # Build a timestamped output path if --save_json is provided
+    if args.save_json:
+        ts = datetime.now().strftime("%Y-%m-%d_%H_%M_%S")  # local time
+        base, ext = os.path.splitext(args.save_json)
+        if "{ts}" in args.save_json or "{timestamp}" in args.save_json:
+            save_json = args.save_json.replace("{ts}", ts).replace("{timestamp}", ts)
+        elif ext.lower() == ".json":
+            save_json = f"{base}_{ts}{ext}"
+        else:
+            save_json = f"{args.save_json}_{ts}.json"
+        out_dir = os.path.dirname(save_json)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
 
     set_seed(args.seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
