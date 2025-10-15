@@ -193,10 +193,10 @@ class WMEncoderCtx:
 
 
 def load_encoder_ctx(
-        process_cfg_path: str,
-        model_cfg_path: str,
-        train_cfg_path: str,
-        checkpoint_path: str,
+    process_cfg_path: str,
+    model_cfg_path: str,
+    train_cfg_path: str,
+    checkpoint_path: str,
 ) -> WMEncoderCtx:
     process_config = yaml.load(open(process_cfg_path, "r"), Loader=yaml.FullLoader)
     model_config = yaml.load(open(model_cfg_path, "r"), Loader=yaml.FullLoader)
@@ -216,7 +216,7 @@ def load_encoder_ctx(
 
 
 def _bitstr_to_msg_tensor(
-        bitstr: str, total_len: int, device: torch.device, rng: random.Random
+    bitstr: str, total_len: int, device: torch.device, rng: random.Random
 ) -> torch.Tensor:
     if len(bitstr) > total_len:
         raise ValueError(
@@ -230,10 +230,10 @@ def _bitstr_to_msg_tensor(
 
 
 def make_encoder_fn(
-        ctx: WMEncoderCtx,
+    ctx: WMEncoderCtx,
 ) -> Callable[[torch.Tensor, int, str, random.Random], torch.Tensor]:
     def _fn(
-            wav_cpu: torch.Tensor, sr: int, bitstr: str, rng: random.Random
+        wav_cpu: torch.Tensor, sr: int, bitstr: str, rng: random.Random
     ) -> torch.Tensor:
         x2 = ensure_2d_mono(wav_cpu).to(ctx.device)  # [1, T]
         msg = _bitstr_to_msg_tensor(bitstr, ctx.msg_len, ctx.device, rng)  # [1, 1, L]
@@ -288,7 +288,7 @@ def _get_phone_assets(target_sr: int = 16000) -> Tuple[torch.Tensor, torch.Tenso
     if noise_sr != target_sr:
         noise = tf_resample(noise_raw, noise_sr, target_sr)
 
-    rir = rir_raw[:, int(target_sr * 1.01): int(target_sr * 1.3)]
+    rir = rir_raw[:, int(target_sr * 1.01) : int(target_sr * 1.3)]
     rir = rir / torch.linalg.vector_norm(rir, ord=2)
 
     _PHONE_CACHE[target_sr] = (rir, noise)
@@ -327,7 +327,7 @@ class AudioProcessor:
 
     @staticmethod
     def benign_compression(
-            waveform, sample_rate, codec="mp3", bitrate="128k", rng=None
+        waveform, sample_rate, codec="mp3", bitrate="128k", rng=None
     ):
         if not _HAVE_PYDUB:
             raise RuntimeError("pydub or ffmpeg not available for benign_compression")
@@ -340,10 +340,10 @@ class AudioProcessor:
         ).export(buffer, format=codec, bitrate=bitrate)
         buffer.seek(0)
         out = (
-                np.array(AudioSegment.from_file(buffer).get_array_of_samples()).astype(
-                    np.float32
-                )
-                / 32768.0
+            np.array(AudioSegment.from_file(buffer).get_array_of_samples()).astype(
+                np.float32
+            )
+            / 32768.0
         )
         T_in = x.size(-1)
         if out.shape[0] > T_in:
@@ -379,10 +379,10 @@ class AudioProcessor:
             ).export(buffer, format="wav")
             buffer.seek(0)
             wf = (
-                    np.array(
-                        AudioSegment.from_file(buffer, format="wav").get_array_of_samples()
-                    ).astype(np.float32)
-                    / 32768.0
+                np.array(
+                    AudioSegment.from_file(buffer, format="wav").get_array_of_samples()
+                ).astype(np.float32)
+                / 32768.0
             )
         T_in = x.size(-1)
         if wf.shape[0] > T_in:
@@ -394,7 +394,7 @@ class AudioProcessor:
 
     @staticmethod
     def benign_noise_suppression(
-            waveform, sr, energy_threshold=0.01, frame_size=None, hop_size=None, rng=None
+        waveform, sr, energy_threshold=0.01, frame_size=None, hop_size=None, rng=None
     ):
         x = ensure_2d_mono(waveform)
         fs, hs = (
@@ -405,21 +405,21 @@ class AudioProcessor:
         x0 = x[0]
         T = x0.size(0)
         for start in range(0, max(T - fs + 1, 1), hs):
-            frame = x0[start: start + fs]
+            frame = x0[start : start + fs]
             if frame.numel() == 0:
                 continue
-            energy = torch.sqrt((frame ** 2).mean())
+            energy = torch.sqrt((frame**2).mean())
             if energy < energy_threshold:
-                x0[start: start + fs] = 0.0
+                x0[start : start + fs] = 0.0
         return x
 
     @staticmethod
     def benign_phone_recording(
-            waveform,
-            sample_rate,
-            snr_db: int,
-            effect: Optional[str] = None,
-            codec: str = "g722",
+        waveform,
+        sample_rate,
+        snr_db: int,
+        effect: Optional[str] = None,
+        codec: str = "g722",
     ):
         """
         Simulate a phone capture:
@@ -487,18 +487,18 @@ class AudioProcessor:
         c0 = int(T * 0.1)
         c1 = int(T * 0.9 - del_len)
         start = (T - del_len) // 2 if c1 <= c0 else rng.randint(c0, c1)
-        out = torch.cat([x[..., :start], x[..., start + del_len:]], dim=-1)
+        out = torch.cat([x[..., :start], x[..., start + del_len :]], dim=-1)
         return out, {"ratio": ratio, "start": start, "del_len": del_len}
 
     @staticmethod
     def malicious_silence(
-            waveform,
-            sample_rate=16000,
-            ratio=0.2,
-            frame_size=None,
-            hop_size=None,
-            energy_threshold=0.01,
-            rng=None,
+        waveform,
+        sample_rate=16000,
+        ratio=0.2,
+        frame_size=None,
+        hop_size=None,
+        energy_threshold=0.01,
+        rng=None,
     ):
         x = ensure_2d_mono(waveform)
         fs, hs = (
@@ -511,7 +511,7 @@ class AudioProcessor:
         frames = (
             x0.unfold(0, min(fs, max(T, 1)), max(hs, 1)) if T >= fs else x0.view(1, -1)
         )
-        energy = torch.sqrt((frames ** 2).mean(dim=1))
+        energy = torch.sqrt((frames**2).mean(dim=1))
         voiced = (energy > energy_threshold).nonzero(as_tuple=True)[0]
         if len(voiced) == 0:
             return x, {"ratio": ratio, "note": "no voiced frames"}
@@ -524,7 +524,7 @@ class AudioProcessor:
 
     @staticmethod
     def malicious_reorder(
-            waveform, sample_rate=None, num_segments=None, rng=None, fade_ms=5
+        waveform, sample_rate=None, num_segments=None, rng=None, fade_ms=5
     ):
         x = ensure_2d_mono(waveform)
         T = x.shape[-1]
@@ -539,7 +539,7 @@ class AudioProcessor:
         )
         seg_bounds = [0] + cut_points + [T]
         segs = [
-            x[:, seg_bounds[i]: seg_bounds[i + 1]] for i in range(len(seg_bounds) - 1)
+            x[:, seg_bounds[i] : seg_bounds[i + 1]] for i in range(len(seg_bounds) - 1)
         ]
         rng.shuffle(segs)
         fade_len = int((fade_ms / 1000.0) * (sample_rate if sample_rate else 16000))
@@ -550,7 +550,7 @@ class AudioProcessor:
 
     @staticmethod
     def malicious_splice(
-            waveform, sample_rate, spliced_waveform=None, rng=None, fade_ms=5
+        waveform, sample_rate, spliced_waveform=None, rng=None, fade_ms=5
     ):
         x = ensure_2d_mono(waveform)
         donor = (
@@ -572,14 +572,14 @@ class AudioProcessor:
 
     @staticmethod
     def malicious_substitute(
-            waveform,
-            sample_rate,
-            replace_waveform=None,
-            frame_size=None,
-            hop_size=None,
-            energy_threshold=0.01,
-            rng=None,
-            fade_ms=5,
+        waveform,
+        sample_rate,
+        replace_waveform=None,
+        frame_size=None,
+        hop_size=None,
+        energy_threshold=0.01,
+        rng=None,
+        fade_ms=5,
     ):
         x = ensure_2d_mono(waveform)
         donor = (
@@ -598,7 +598,7 @@ class AudioProcessor:
         frames = (
             x0.unfold(0, min(fs, max(T, 1)), max(hs, 1)) if T >= fs else x0.view(1, -1)
         )
-        energy = torch.sqrt((frames ** 2).mean(dim=1))
+        energy = torch.sqrt((frames**2).mean(dim=1))
         voiced = (energy > energy_threshold).nonzero(as_tuple=True)[0]
         if len(voiced) == 0:
             start = max(0, (T - sub_len) // 2)
@@ -611,7 +611,7 @@ class AudioProcessor:
                 else max(0, (T - sub_len) // 2)
             )
         left = x[..., :start]
-        right = x[..., start + sub_len:]
+        right = x[..., start + sub_len :]
         fade_len = int((fade_ms / 1000.0) * sample_rate)
         mid = _crossfade(left, donor, fade_len)
         out = torch.cat([mid, right], dim=-1)
@@ -640,18 +640,18 @@ DISTORTION_REGISTRY = {
         AudioProcessor.benign_noise_suppression(wav, sr, rng=rng),
         {"energy_threshold": 0.01},
     ),
-    "benign_phone_recording_30": lambda wav, sr, rng, **kw: (
-        AudioProcessor.benign_phone_recording(wav, sr, snr_db=30),
-        {"snr_db": 30, "codec": "g722"},
-    ),
-    "benign_phone_recording_10": lambda wav, sr, rng, **kw: (
-        AudioProcessor.benign_phone_recording(wav, sr, snr_db=10),
-        {"snr_db": 10, "codec": "g722"},
-    ),
-    "benign_phone_recording_0": lambda wav, sr, rng, **kw: (
-        AudioProcessor.benign_phone_recording(wav, sr, snr_db=0),
-        {"snr_db": 0, "codec": "g722"},
-    ),
+    # "benign_phone_recording_30": lambda wav, sr, rng, **kw: (
+    #     AudioProcessor.benign_phone_recording(wav, sr, snr_db=30),
+    #     {"snr_db": 30, "codec": "g722"},
+    # ),
+    # "benign_phone_recording_10": lambda wav, sr, rng, **kw: (
+    #     AudioProcessor.benign_phone_recording(wav, sr, snr_db=10),
+    #     {"snr_db": 10, "codec": "g722"},
+    # ),
+    # "benign_phone_recording_0": lambda wav, sr, rng, **kw: (
+    #     AudioProcessor.benign_phone_recording(wav, sr, snr_db=0),
+    #     {"snr_db": 0, "codec": "g722"},
+    # ),
     "malicious_delete_0.3": lambda wav, sr, rng, **kw: AudioProcessor.malicious_delete(
         wav, sr, ratio=0.3, rng=rng
     ),
@@ -674,11 +674,11 @@ DISTORTION_REGISTRY = {
 # Donor selection from same speaker
 # -----------------------------
 def load_random_segment_from_same_speaker(
-        cur_path: str,
-        target_len: int,
-        rng: random.Random,
-        target_sr: int,
-        speaker2files: Dict[str, List[str]],
+    cur_path: str,
+    target_len: int,
+    rng: random.Random,
+    target_sr: int,
+    speaker2files: Dict[str, List[str]],
 ) -> Optional[torch.Tensor]:
     spk = speaker_id_from_path(cur_path)
     if spk is None:
@@ -695,7 +695,7 @@ def load_random_segment_from_same_speaker(
     if wav_d.size(-1) == target_len:
         return ensure_2d_mono(wav_d)
     start = rng.randint(0, wav_d.size(-1) - target_len)
-    return ensure_2d_mono(wav_d[:, start: start + target_len])
+    return ensure_2d_mono(wav_d[:, start : start + target_len])
 
 
 # -----------------------------
@@ -724,7 +724,7 @@ def collect_eligible_files(root: str) -> List[str]:
 
 
 def sample_files(
-        files: List[str], k: int, seed: int, mode: str = "sequential"
+    files: List[str], k: int, seed: int, mode: str = "sequential"
 ) -> List[str]:
     # Start from lexicographic path order to keep stable behavior
     sorted_files = sorted(files)
@@ -754,7 +754,7 @@ _process_ctx = {
 
 
 def _worker_init(
-        speaker2files: Dict[str, List[str]], seed: int, voxceleb_root: str, out_root: str
+    speaker2files: Dict[str, List[str]], seed: int, voxceleb_root: str, out_root: str
 ):
     _process_ctx["speaker2files"] = speaker2files
     _process_ctx["seed"] = seed
@@ -780,7 +780,7 @@ class SampleResult:
 
 
 def _distort_and_write_metadata(
-        in_path: str, rel_dir: str, bitstr: str, sr: int
+    in_path: str, rel_dir: str, bitstr: str, sr: int
 ) -> SampleResult:
     try:
         out_root = _process_ctx["out_root"]
@@ -865,16 +865,16 @@ def _distort_and_write_metadata(
 # Coordinator
 # -----------------------------
 def build_dataset(
-        voxceleb_root: str,
-        out_root: str,
-        process_cfg: str,
-        model_cfg: str,
-        train_cfg: str,
-        checkpoint_path: str,
-        sample_count: int = SAMPLE_COUNT,
-        seed: int = DEFAULT_SEED,
-        selection: str = "sequential",  # "sequential" or "random"
-        max_workers: Optional[int] = None,
+    voxceleb_root: str,
+    out_root: str,
+    process_cfg: str,
+    model_cfg: str,
+    train_cfg: str,
+    checkpoint_path: str,
+    sample_count: int = SAMPLE_COUNT,
+    seed: int = DEFAULT_SEED,
+    selection: str = "sequential",  # "sequential" or "random"
+    max_workers: Optional[int] = None,
 ) -> None:
     set_global_seed(seed)
     ensure_dir(out_root)
@@ -899,7 +899,7 @@ def build_dataset(
 
     # Bits assignment (deterministic cycle of 10-bit codes)
     def make_bit_pool(bit_len: int, s: int) -> List[str]:
-        pool = [format(i, f"0{bit_len}b") for i in range(2 ** bit_len)]
+        pool = [format(i, f"0{bit_len}b") for i in range(2**bit_len)]
         rng = random.Random(s)
         rng.shuffle(pool)
         return pool
@@ -966,7 +966,7 @@ def build_dataset(
             prepared.append((in_path, rel_dir, bitstr, sr))
         except Exception as e:
             with open(
-                    os.path.join(out_root, "errors_embed.txt"), "a", encoding="utf-8"
+                os.path.join(out_root, "errors_embed.txt"), "a", encoding="utf-8"
             ) as ef:
                 ef.write(f"{os.path.relpath(in_path, voxceleb_root)}\t{str(e)}\n")
 
@@ -977,9 +977,9 @@ def build_dataset(
         max(1, os.cpu_count() or 1) if max_workers in (None, 0, -1) else max_workers
     )
     with ProcessPoolExecutor(
-            max_workers=max_workers,
-            initializer=_worker_init,
-            initargs=(speaker2files, seed, voxceleb_root, out_root),
+        max_workers=max_workers,
+        initializer=_worker_init,
+        initargs=(speaker2files, seed, voxceleb_root, out_root),
     ) as ex:
         futs = []
         for in_path, rel_dir, bitstr, sr in prepared:

@@ -278,18 +278,12 @@ def evaluate(
     # Final metrics
     benign_acc = float(np.mean(benign_accs)) if benign_accs else 0.0
     malicious_acc = float(np.mean(malicious_accs)) if malicious_accs else 0.0
-    overall_acc = (
-        float(np.mean(benign_accs + malicious_accs))
-        if (benign_accs or malicious_accs)
-        else 0.0
-    )
     per_op_acc = {
         op: (op_sum[op] / max(1, op_count[op])) for op in sorted(op_sum.keys())
     }
     per_op_count = dict(op_count)
 
     results = {
-        "overall_acc": overall_acc,
         "benign_acc": benign_acc,
         "malicious_acc": malicious_acc,
         "per_op_acc": per_op_acc,
@@ -303,7 +297,7 @@ def evaluate(
     # Pretty print summary
     print("\n=== Inference Summary ===")
     print(
-        f"items: {len(ds)} | overall_acc: {overall_acc:.4f} | benign: {benign_acc:.4f} | malicious: {malicious_acc:.4f}"
+        f"items: {len(ds)} | benign: {benign_acc:.4f} | malicious: {malicious_acc:.4f}"
     )
     print("per-op accuracy (including benign_identity):")
     for name, acc in sorted(per_op_acc.items(), key=lambda kv: kv[1], reverse=True):
