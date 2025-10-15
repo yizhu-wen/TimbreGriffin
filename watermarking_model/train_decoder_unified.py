@@ -541,7 +541,8 @@ def main():
         log_epoch_to_wandb(ep, train_stats, eval_stats, optimizer)
 
         # Optionally save checkpoints each epoch
-        # torch.save({"decoder": decoder.state_dict()}, args.decoder_ckpt_out)
+        if ep % 5 == 0:
+            torch.save({"decoder": decoder.state_dict()}, args.decoder_ckpt_out)
 
     print("done")
     wandb.finish()

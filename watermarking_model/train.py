@@ -274,8 +274,7 @@ def main(configs):
     offset_samples = 40480  # ((204+50)-1)*160
     global_step = 0
     train_len = len(train_audios_loader)
-    print("Total epochs: ", epoch_num)
-    print("train_len: ", train_len)
+
     for ep in range(1, epoch_num + 1):
         encoder.train()
         decoder.train()
