@@ -59,14 +59,14 @@ def to_batch_1T(x_list: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]
         if pad > 0:
             w = torch.nn.functional.pad(w, (0, pad))
         padded.append(w)
-    x = torch.cat(padded, dim=0)  # [B, T]
+    x = torch.cat(padded, dim=0)
     return x, lengths
 
 
 def try_decode(decoder, x_batch: torch.Tensor) -> torch.Tensor:
     # Always feed [B, T] to match your decoder forward
     decoder.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         out = decoder(x_batch)
     if isinstance(out, (list, tuple)):
         out = out[0]
@@ -171,6 +171,7 @@ class InferenceDecoderDataset(Dataset):
 def collate(batch):
     # load audio here to parallelize with num_workers
     waves, bits, ops, keys, is_benigns = [], [], [], [], []
+
     for wav_path, bitstr, op, is_b in batch:
         w, sr = load_wav(wav_path)
         waves.append(w)
@@ -215,10 +216,19 @@ def evaluate(
 
     # Dataset / Loader
     ds = InferenceDecoderDataset(index_file, minlen_rule=minlen_rule)
+
+    # Pre-cache unique bit vectors ONCE
+    bits_cache = {}
+    for itm in ds.items:
+        b = itm["bits"]
+        if b not in bits_cache:
+            bits_cache[b] = bits_to_vec(b, device)  # tensor on device
+
     dl = DataLoader(
         ds,
         batch_size=batch_size,
         shuffle=False,
+        pin_memory=True,
         num_workers=num_workers,
         collate_fn=collate,
     )
@@ -236,11 +246,12 @@ def evaluate(
             for w, k in zip(waves, keys)
         ]
         x, _ = to_batch_1T(waves_c)
-        x = x.to(device)
+        x = x.to(device, non_blocking=True)
 
         # targets
         K = len(bits_list[0])
-        tgt = torch.stack([bits_to_vec(b, device) for b in bits_list], dim=0)
+        # tgt = torch.stack([bits_to_vec(b, device) for b in bits_list], dim=0)
+        tgt = torch.stack([bits_cache[b] for b in bits_list], dim=0)
 
         # predict
         out = try_decode(decoder, x)
