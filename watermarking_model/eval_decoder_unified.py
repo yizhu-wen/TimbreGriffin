@@ -13,6 +13,7 @@ from collections import defaultdict
 from typing import List, Tuple, Dict
 from torch.utils.data import Dataset, DataLoader
 from tqdm.auto import tqdm
+from torchaudio.functional import resample as tf_resample
 
 from model.conv2_mel_modules import Decoder  # type: ignore
 
@@ -75,26 +76,6 @@ def try_decode(decoder, x_batch: torch.Tensor) -> torch.Tensor:
 
 def bit_accuracy(pred: torch.Tensor, target: torch.Tensor) -> float:
     return ((pred >= 0).eq(target >= 0).sum().float() / target.numel()).item()
-
-
-def crop_or_pad_fixed(
-    w: torch.Tensor, max_samples: int, key: str, center: bool = True
-) -> torch.Tensor:
-    """Deterministic crop/pad using key; center crop by default for eval."""
-    if max_samples <= 0:
-        return w
-    T = w.size(-1)
-    if T == max_samples:
-        return w
-    if T > max_samples:
-        if center:
-            start = (T - max_samples) // 2
-        else:
-            h = hashlib.sha256(f"{key}".encode("utf-8")).hexdigest()
-            rng = random.Random(int(h[:16], 16))
-            start = rng.randint(0, T - max_samples)
-        return w[:, start : start + max_samples]
-    return torch.nn.functional.pad(w, (0, max_samples - T))
 
 
 # ---------------------------
@@ -166,18 +147,46 @@ class InferenceDecoderDataset(Dataset):
         return rec["wav_path"], rec["bits"], rec["op"], rec["is_benign"]
 
 
-def collate(batch):
-    # load audio here to parallelize with num_workers
-    waves, bits, ops, keys, is_benigns = [], [], [], [], []
+def make_collate(sample_rate: int, max_samples: int, deterministic: bool = True):
+    """
+    Returns a collate() that:
+        - resample to "sample_rate" if needed
+        - optionally truncates to a random length in [5*sr, max_samples]
+        - uses a deterministic RNG per file when deterministic=True
+    """
 
-    for wav_path, bitstr, op, is_b in batch:
-        w, sr = load_wav(wav_path)
-        waves.append(w)
-        bits.append(bitstr)
-        ops.append(op)
-        keys.append(wav_path)  # use path as deterministic key
-        is_benigns.append(is_b)
-    return waves, bits, ops, keys, is_benigns
+    def _collate(batch):
+        # load audio here to parallelize with num_workers
+        waves, bits, ops, keys, is_benigns = [], [], [], [], []
+
+        for wav_path, bitstr, op, is_b in batch:
+            w, sr = load_wav(wav_path)
+            # Resample if needed
+            if sr != sample_rate:
+                w = tf_resample(w, sr, sample_rate)
+                sr = sample_rate
+
+            # (Optional) random cut down to max_len
+            if w.size(-1) > max_samples:
+                if deterministic:
+                    h = int(
+                        hashlib.sha256(wav_path.encode("utf-8")).hexdigest()[:16], 16
+                    )
+                    rng = random.Random(h)
+                    cut_len = rng.randint(5 * sr, max_samples)
+                else:
+                    cut_len = random.randint(5 * sr, max_samples)
+                cut_len = min(cut_len, w.size(-1))
+                w = w[:, :cut_len]
+
+            waves.append(w)
+            bits.append(bitstr)
+            ops.append(op)
+            keys.append(wav_path)  # use path as deterministic key
+            is_benigns.append(is_b)
+        return waves, bits, ops, keys, is_benigns
+
+    return _collate
 
 
 # ---------------------------
@@ -202,6 +211,7 @@ def evaluate(
     model_config = yaml.load(open(model_cfg, "r"), Loader=yaml.FullLoader)
     train_config = yaml.load(open(train_cfg, "r"), Loader=yaml.FullLoader)
     msg_len = int(train_config["watermark"]["length"])
+    or_sample_rate = process_config["audio"]["or_sample_rate"]
 
     # Model
     decoder = Decoder(process_config, model_config, train_config, msg_len).to(device)
@@ -222,6 +232,11 @@ def evaluate(
         if b not in bits_cache:
             bits_cache[b] = bits_to_vec(b, device)  # tensor on device
 
+    # Use the collate factory
+    collate = make_collate(
+        sample_rate=or_sample_rate, max_samples=max_samples, deterministic=True
+    )
+
     dl = DataLoader(
         ds,
         batch_size=batch_size,
@@ -238,27 +253,19 @@ def evaluate(
 
     pbar = tqdm(dl, total=len(dl), desc="inference", leave=False)
     for waves, bits_list, ops, keys, is_benigns in pbar:
-        # center crop/pad for eval
-        waves_c = [
-            crop_or_pad_fixed(w, max_samples, key=k, center=True)
-            for w, k in zip(waves, keys)
-        ]
-        x, _ = to_batch_1T(waves_c)
+        x, _ = to_batch_1T(waves)
         x = x.to(device, non_blocking=True)
 
         # targets
-        K = len(bits_list[0])
-        # tgt = torch.stack([bits_to_vec(b, device) for b in bits_list], dim=0)
         tgt = torch.stack([bits_cache[b] for b in bits_list], dim=0)
 
         # predict
         out = try_decode(decoder, x)
-        K_eff = min(K, out.size(1))
 
         ba, ma = [], []
         for i, is_b in enumerate(is_benigns):
-            pred_i = out[i, :K_eff].unsqueeze(0)
-            tgt_i = tgt[i, :K_eff].unsqueeze(0)  # compare directly to ground truth
+            pred_i = out[i, :].unsqueeze(0)
+            tgt_i = tgt[i, :].unsqueeze(0)  # compare directly to ground truth
             acc_i = bit_accuracy(pred_i, tgt_i)
             if is_b:
                 ba.append(acc_i)
@@ -273,9 +280,10 @@ def evaluate(
         if ma:
             malicious_accs.extend(ma)
 
-        cur_b = float(np.mean(ba)) if ba else 0.0
-        cur_m = float(np.mean(ma)) if ma else 0.0
-        pbar.set_postfix(benign=f"{cur_b:.3f}", malicious=f"{cur_m:.3f}")
+        pbar.set_postfix(
+            benign=f"{(float(np.mean(ba)) if ba else 0.0):.3f}",
+            malicious=f"{(float(np.mean(ma)) if ma else 0.0):.3f}",
+        )
 
     # Final metrics
     benign_acc = float(np.mean(benign_accs)) if benign_accs else 0.0

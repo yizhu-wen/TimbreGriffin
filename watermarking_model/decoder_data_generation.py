@@ -162,11 +162,15 @@ def load_audio(path: str) -> Tuple[torch.Tensor, int]:
     return wav, sr
 
 
-def save_wav(path: str, wav: torch.Tensor, sr: int):
+def save_wav(path: str, wav: torch.Tensor, sr: int, float_pcm: bool = True):
     wav = ensure_2d_mono(wav)
     wav = clamp01(wav)
     ensure_dir(os.path.dirname(path))
-    torchaudio.save(path, wav, sr, bits_per_sample=16)
+    if float_pcm:
+        # 32-bit float PCM (no quantization)
+        torchaudio.save(path, wav, sr, encoding="PCM_F", bits_per_sample=32)
+    else:
+        torchaudio.save(path, wav, sr, encoding="PCM_S", bits_per_sample=16)
 
 
 def min_length_from_sr(sr: int) -> int:
@@ -824,7 +828,7 @@ def _distort_and_write_metadata(
                 out_wav = clamp01(out_wav)
 
                 out_fname = f"{name}.wav"
-                save_wav(os.path.join(sdir, out_fname), out_wav, sr)
+                save_wav(os.path.join(sdir, out_fname), out_wav, sr, float_pcm=True)
 
                 entry["distorted_path"] = out_fname
                 entry["validation"] = (
@@ -953,7 +957,9 @@ def build_dataset(
             wm_wav = encode_fn(
                 wav, sr, bitstr, rng
             )  # pure watermarked (no pad/trim/RMS)
-            save_wav(os.path.join(sdir, "benign_identity.wav"), wm_wav, sr)
+            save_wav(
+                os.path.join(sdir, "benign_identity.wav"), wm_wav, sr, float_pcm=True
+            )
 
             prepared.append((in_path, rel_dir, bitstr, sr))
         except Exception as e:
