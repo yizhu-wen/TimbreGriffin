@@ -254,7 +254,8 @@ def train_one_epoch(
         tgt = torch.stack([bits_to_vec(b, device) for b in bits_list], dim=0)
         for i, is_b in enumerate(is_benigns):
             if not is_b:
-                tgt[i] = apply_flip(tgt[i], key=f"{ops[i]}|{keys[i]}")
+                pass
+                # tgt[i] = apply_flip(tgt[i], key=f"{ops[i]}|{keys[i]}")
 
         optimizer.zero_grad()
         out = try_decode(decoder, x)
