@@ -628,22 +628,22 @@ DISTORTION_REGISTRY = {
         AudioProcessor.benign_identity(wav, sr, rng=rng),
         {"note": "pure watermarked baseline"},
     ),
-    # "benign_compression": lambda wav, sr, rng, **kw: (
-    #     AudioProcessor.benign_compression(wav, sr, rng=rng),
-    #     {"codec": "mp3", "bitrate": "128k"},
-    # ),
-    # "benign_resample": lambda wav, sr, rng, **kw: (
-    #     AudioProcessor.benign_resample(wav, sr, rng=rng),
-    #     {"target_sr": 8000},
-    # ),
-    # "benign_reencode": lambda wav, sr, rng, **kw: (
-    #     AudioProcessor.benign_reencode(wav, sr, passes=3, rng=rng),
-    #     {"passes": 3},
-    # ),
-    # "benign_noise_suppression": lambda wav, sr, rng, **kw: (
-    #     AudioProcessor.benign_noise_suppression(wav, sr, rng=rng),
-    #     {"energy_threshold": 0.01},
-    # ),
+    "benign_compression": lambda wav, sr, rng, **kw: (
+        AudioProcessor.benign_compression(wav, sr, rng=rng),
+        {"codec": "mp3", "bitrate": "128k"},
+    ),
+    "benign_resample": lambda wav, sr, rng, **kw: (
+        AudioProcessor.benign_resample(wav, sr, rng=rng),
+        {"target_sr": 8000},
+    ),
+    "benign_reencode": lambda wav, sr, rng, **kw: (
+        AudioProcessor.benign_reencode(wav, sr, passes=3, rng=rng),
+        {"passes": 3},
+    ),
+    "benign_noise_suppression": lambda wav, sr, rng, **kw: (
+        AudioProcessor.benign_noise_suppression(wav, sr, rng=rng),
+        {"energy_threshold": 0.01},
+    ),
     # "benign_phone_recording_30": lambda wav, sr, rng, **kw: (
     #     AudioProcessor.benign_phone_recording(wav, sr, snr_db=30),
     #     {"snr_db": 20, "codec": "g722"},
