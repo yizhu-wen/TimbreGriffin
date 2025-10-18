@@ -48,7 +48,7 @@ if torch.cuda.is_available():
     # optional warmup logic
     # run a few warmup batches first, then:
     used = pc.size
-    headroom = int(pc.max_size * 1.5)  # 10 percent headroom
+    headroom = int(pc.max_size * 1.2)  # 20 percent headroom
     pc.max_size = max(pc.max_size, headroom)
     print({"plans_in_use": used, "max_allowed": pc.max_size})
 
