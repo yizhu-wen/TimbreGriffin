@@ -46,6 +46,7 @@ optimize:
   target_dilate_ms: 15
   floor_eps: 0.2
   tau: 0.15
+  distortion: true
 
 iter:
   epoch: 60
@@ -60,43 +61,11 @@ select_aug_mode:
   "use_eval" # other are 'all' and 'use_eval_acc', used to sample augmentations, `fixed` uses the prob from aug_weights, `all` uses all agmentations every step
   # `use_eval_acc` changes the weights based on the accuracies at evaluation time
 
-aug_weights:
-  identity: 1.0 # no augmentation
-#  random_crop_small: 0.0
-#  crop_10%: 0.0
-#  crop_front: 0.0
-#  crop_middle: 0.0
-#  crop_back: 1.0
-#  resample_22.05k_back: 1.0
-  resample_8k_back: 1.0
-#  gaussian_noise: 1.0
-#  amp_scale: 1.0
-#  mp3: 1.0
-#  recount(8bit): 1.0
-#  median_filter: 1.0
-  low_pass_2k: 1.0
-#  high_pass_500: 1.0
-#  crop_mel_wave_back: 1.0
-#  crop_mel_wave_position_mask_5%: 1.0
-#  crop_mel_wave_position_mask_10%: 1.0
-#  crop_mel_wave_position_mask_20%: 1.0
-#  re-encode: 1.0
-#  noise_suppression: 1.0
-#  speed: 0.1
-#  updownresample: 0.1
-#  echo: 0.1
-#  pink_noise: 0.1
-#  lowpass_filter: 0.1
-#  highpass_filter: 0.1
-#  bandpass_filter: 0.1
-#  smooth: 0.1
-#  boost_audio: 0.1
-#  duck_audio: 0.1
-#  mp3_compression: 0.1 # eval only never use in training even if eval_acc low
-#  aac_compression: 0.1 # eval only never use in training even if eval_acc low
-#  encodec: 0.1
-
 n_max_aug: null
+
+aug:
+  cutoff_freq_low: 500
+  cutoff_freq_high: 2000
 
 wandb:
   enabled: true  # Set to true to enable wandb logging

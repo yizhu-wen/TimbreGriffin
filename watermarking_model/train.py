@@ -41,6 +41,17 @@ torch.backends.cudnn.benchmark = False
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+if torch.cuda.is_available():
+    pc = torch.backends.cuda.cufft_plan_cache
+    pc.max_size = 512  # start here
+
+    # optional warmup logic
+    # run a few warmup batches first, then:
+    used = pc.size
+    headroom = int(pc.max_size * 1.5)  # 10 percent headroom
+    pc.max_size = max(pc.max_size, headroom)
+    print({"plans_in_use": used, "max_allowed": pc.max_size})
+
 
 def save_spectrogram_to_buffer(signal, sample_rate=16000):
     buf = BytesIO()
@@ -289,6 +300,7 @@ def main(configs):
         train_avg_d_loss_on_encoded = 0
         train_avg_d_loss_on_cover = 0
         for sample in track(train_audios_loader):
+            # inside the loop, e.g. every 500 steps
             global_step += 1
             step += 1
             b = sample["matrix"].shape[0]

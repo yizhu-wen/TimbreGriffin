@@ -2,18 +2,68 @@ from base64 import encode
 import torch
 import torch.nn as nn
 from torch.nn import LeakyReLU
-from .blocks import FCBlock, Conv2Encoder, WatermarkEmbedder, WatermarkExtracter, ReluBlock
+from .blocks import (
+    FCBlock,
+    Conv2Encoder,
+    WatermarkEmbedder,
+    WatermarkExtracter,
+    ReluBlock,
+)
 from distortions.frequency import TacotronSTFT, fixed_STFT, tacotron_mel
+import julius
+import math
 import torch.nn.functional as F
 from silero_vad import load_silero_vad
+from torchaudio.functional import resample as tf_resample
+from torchaudio.functional import (
+    fftconvolve,
+    add_noise,
+    highpass_biquad,
+    lowpass_biquad,
+)
 
-# from distortions.dl import distortion
+import torchaudio
+from typing import Dict, Tuple
 import random
 
 # Optional: set up a small constant
 EPS = 1e-9
 
-def save_spectrum(y, flag='linear'):
+_PHONE_CACHE: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}  # sr -> (rir, noise)
+
+
+def _get_phone_assets(target_sr: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Download/load demo RIR/noise and resample to target_sr. Returns mono [1, T] tensors."""
+    if target_sr in _PHONE_CACHE:
+        return _PHONE_CACHE[target_sr]
+
+    try:
+        from torchaudio.utils import download_asset
+
+        SAMPLE_RIR = download_asset(
+            "tutorial-assets/Lab41-SRI-VOiCES-rm1-impulse-mc01-stu-clo-8000hz.wav"
+        )
+        SAMPLE_NOISE = download_asset(
+            "tutorial-assets/Lab41-SRI-VOiCES-rm1-babb-mc01-stu-clo-8000hz.wav"
+        )
+        rir_raw, rir_sr = torchaudio.load(SAMPLE_RIR)
+        noise_raw, noise_sr = torchaudio.load(SAMPLE_NOISE)
+    except Exception as e:
+        raise RuntimeError(f"failed to load phone assets: {e}")
+
+    if rir_sr != target_sr:
+        rir_raw = tf_resample(rir_raw, rir_sr, target_sr)
+    if noise_sr != target_sr:
+        noise = tf_resample(noise_raw, noise_sr, target_sr)
+
+    rir = rir_raw[:, int(target_sr * 1.01) : int(target_sr * 1.3)]
+    rir = rir / torch.linalg.vector_norm(rir, ord=2)
+
+    _PHONE_CACHE[target_sr] = (rir, noise)
+    return rir, noise
+
+
+def save_spectrum(y, flag="linear"):
     import numpy as np
     import os
     import librosa
@@ -25,19 +75,22 @@ def save_spectrum(y, flag='linear'):
     os.makedirs(root, exist_ok=True)
 
     plt.figure(figsize=(10, 4))
-    plt.specgram(y, Fs=16000, NFFT=320, noverlap=160, window=np.hanning(320), cmap='magma')
+    plt.specgram(
+        y, Fs=16000, NFFT=320, noverlap=160, window=np.hanning(320), cmap="magma"
+    )
 
-    plt.colorbar(format='%+2.0f dB')
-    plt.title('Amplitude Spectrogram')
+    plt.colorbar(format="%+2.0f dB")
+    plt.title("Amplitude Spectrogram")
     plt.tight_layout()
     plt.savefig(
         os.path.join(root, f"{flag}_amplitude_spectrogram.png"),
-        bbox_inches='tight',
-        pad_inches=0.0
+        bbox_inches="tight",
+        pad_inches=0.0,
     )
     plt.close()
 
-def save_spectrum_normal(y, flag='linear'):
+
+def save_spectrum_normal(y, flag="linear"):
     import numpy as np
     import os
     import librosa
@@ -56,7 +109,7 @@ def save_spectrum_normal(y, flag='linear'):
 
     # Compute the spectrogram
     Pxx, freqs, bins, im = plt.specgram(
-        y, Fs=16000, NFFT=320, noverlap=160, cmap='magma'
+        y, Fs=16000, NFFT=320, noverlap=160, cmap="magma"
     )
 
     Pxx_dB = librosa.amplitude_to_db(Pxx, ref=np.max)
@@ -64,15 +117,15 @@ def save_spectrum_normal(y, flag='linear'):
     # Clear previous plot and redraw with log values
     plt.clf()
     plt.figure(figsize=(10, 4))
-    plt.pcolormesh(bins, freqs, Pxx_dB, shading='auto', cmap='magma')
+    plt.pcolormesh(bins, freqs, Pxx_dB, shading="auto", cmap="magma")
 
-    plt.colorbar(format='%+2.0f dB')
-    plt.title('Log Amplitude Spectrogram')
+    plt.colorbar(format="%+2.0f dB")
+    plt.title("Log Amplitude Spectrogram")
     plt.tight_layout()
     plt.savefig(
         os.path.join(root, f"{flag}_amplitude_spectrogram.png"),
-        bbox_inches='tight',
-        pad_inches=0.0
+        bbox_inches="tight",
+        pad_inches=0.0,
     )
     plt.close()
 
@@ -83,27 +136,32 @@ def save_feature_map(feature_maps):
     import librosa
     import numpy as np
     import librosa.display
+
     feature_maps = feature_maps.cpu().numpy()
     root = "draw_figure"
-    output_folder = os.path.join(root,"feature_map_or")
+    output_folder = os.path.join(root, "feature_map_or")
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     n_channels = feature_maps.shape[0]
     for channel_idx in range(n_channels):
         fig, ax = plt.subplots()
-        ax.imshow(feature_maps[channel_idx, :, :], cmap='gray')
-        ax.axis('off')
-        output_file = os.path.join(output_folder, f'feature_map_channel_{channel_idx + 1}.png')
-        plt.savefig(output_file, bbox_inches='tight', pad_inches=0.0)
+        ax.imshow(feature_maps[channel_idx, :, :], cmap="gray")
+        ax.axis("off")
+        output_file = os.path.join(
+            output_folder, f"feature_map_channel_{channel_idx + 1}.png"
+        )
+        plt.savefig(output_file, bbox_inches="tight", pad_inches=0.0)
         plt.close(fig)
 
-def save_waveform(a_tensor, flag='original'):
+
+def save_waveform(a_tensor, flag="original"):
     import os
     import librosa
     import librosa.display
     import matplotlib.pyplot as plt
     import numpy as np
     import soundfile
+
     root = "draw_figure"
     y = a_tensor.detach().cpu().numpy()
     soundfile.write(os.path.join(root, flag + "_waveform.wav"), y, samplerate=16000)
@@ -128,9 +186,29 @@ class Encoder(nn.Module):
         self.hop_length = process_config["mel"]["hop_length"]
         self.win_length = process_config["mel"]["win_length"]
         self.sampling_rate = process_config["audio"]["or_sample_rate"]
-        self.voice_prefilling = int(((process_config["audio"]["audio_prefilling"]+0.05)*self.sampling_rate) // self.hop_length)-1 #204
-        self.delay_amt = int((train_config["watermark"]["delay_amt_second"]*self.sampling_rate) // self.hop_length + 1)  # 51
-        self.future_amt = int((train_config["watermark"]["future_amt_second"]*self.sampling_rate) // self.hop_length + 1)-1  # 50
+        self.voice_prefilling = (
+            int(
+                (
+                    (process_config["audio"]["audio_prefilling"] + 0.05)
+                    * self.sampling_rate
+                )
+                // self.hop_length
+            )
+            - 1
+        )  # 204
+        self.delay_amt = int(
+            (train_config["watermark"]["delay_amt_second"] * self.sampling_rate)
+            // self.hop_length
+            + 1
+        )  # 51
+        self.future_amt = (
+            int(
+                (train_config["watermark"]["future_amt_second"] * self.sampling_rate)
+                // self.hop_length
+                + 1
+            )
+            - 1
+        )  # 50
         self.power = 1.0
 
         self.smooth_chunks = train_config["optimize"]["smooth_chunks"]
@@ -143,16 +221,32 @@ class Encoder(nn.Module):
         self.vad_threshold = 0.50
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
-        #MLP for the input wm
+        # MLP for the input wm
         # self.msg_linear_in = FCBlock(msg_length, self.win_dim, activation=LeakyReLU(inplace=True))
-        self.msg_linear_in = FCBlock(msg_length, self.win_dim // 2, activation=LeakyReLU(inplace=True))
+        self.msg_linear_in = FCBlock(
+            msg_length, self.win_dim // 2, activation=LeakyReLU(inplace=True)
+        )
 
-        #stft transform
-        self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
+        # stft transform
+        self.stft = fixed_STFT(
+            process_config["mel"]["n_fft"],
+            process_config["mel"]["hop_length"],
+            process_config["mel"]["win_length"],
+        )
 
-        self.ENc = Conv2Encoder(input_channel=2, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_CE)
+        self.ENc = Conv2Encoder(
+            input_channel=2,
+            hidden_dim=model_config["conv2"]["hidden_dim"],
+            block=self.block,
+            n_layers=self.layers_CE,
+        )
 
-        self.EM = WatermarkEmbedder(input_channel=self.EM_input_dim, hidden_dim = model_config["conv2"]["hidden_dim"], block=self.block, n_layers=self.layers_EM)
+        self.EM = WatermarkEmbedder(
+            input_channel=self.EM_input_dim,
+            hidden_dim=model_config["conv2"]["hidden_dim"],
+            block=self.block,
+            n_layers=self.layers_EM,
+        )
 
     def pad_w_zero_stft(self, input_stft, watermark_stft, voice_prefilling):
         """
@@ -160,15 +254,23 @@ class Encoder(nn.Module):
         respecting future_amt and chunk-based offsets.
         """
 
-        zeros_right_len = input_stft.shape[3] - watermark_stft.shape[3] - (voice_prefilling + self.future_amt)
+        zeros_right_len = (
+            input_stft.shape[3]
+            - watermark_stft.shape[3]
+            - (voice_prefilling + self.future_amt)
+        )
         if zeros_right_len < 0:
             # Edge case: won't happen if chunking logic is correct, but just to be safe
             zeros_right_len = 0
 
-        zeros_left = torch.zeros_like(input_stft[:, :, :, :voice_prefilling + self.future_amt])
+        zeros_left = torch.zeros_like(
+            input_stft[:, :, :, : voice_prefilling + self.future_amt]
+        )
         zeros_right = torch.zeros_like(input_stft[:, :, :, :zeros_right_len])
 
-        actual_watermark = torch.cat([zeros_left, watermark_stft, zeros_right], dim=3) + EPS
+        actual_watermark = (
+            torch.cat([zeros_left, watermark_stft, zeros_right], dim=3) + EPS
+        )
         return actual_watermark, zeros_right
 
     def forward(self, x, msg, global_step):
@@ -183,23 +285,56 @@ class Encoder(nn.Module):
         # Predict future 0.5s watermark
         # 0.5*16000 = 8000
         # 8000 // hop_length + 1 =51
-        if int(stft_result.shape[-1] - (self.voice_prefilling + self.future_amt) / self.delay_amt) <= 0:
+        if (
+            int(
+                stft_result.shape[-1]
+                - (self.voice_prefilling + self.future_amt) / self.delay_amt
+            )
+            <= 0
+        ):
             return None  # Not enough frames for a chunk
 
         list_of_watermarks = []
-        for i in range(int((stft_result.shape[-1] - (self.voice_prefilling + self.future_amt)) / self.delay_amt)):
-            carrier_encoded = self.ENc(stft_result[:, :, :, i * self.delay_amt:self.voice_prefilling + i * self.delay_amt])
+        for i in range(
+            int(
+                (stft_result.shape[-1] - (self.voice_prefilling + self.future_amt))
+                / self.delay_amt
+            )
+        ):
+            carrier_encoded = self.ENc(
+                stft_result[
+                    :,
+                    :,
+                    :,
+                    i * self.delay_amt : self.voice_prefilling + i * self.delay_amt,
+                ]
+            )
             # torch.Size([B, 1, 81])
             # torch.Size([B, 81, 1])
             # torch.Size([B, 1, 81, 1])
             # torch.Size([B, 1, 162, 201])
-            watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 2,
-                                                                                            carrier_encoded.shape[3])
+            watermark_encoded = (
+                self.msg_linear_in(msg)
+                .transpose(1, 2)
+                .unsqueeze(1)
+                .repeat(1, 1, 2, carrier_encoded.shape[3])
+            )
             # watermark_encoded = self.msg_linear_in(msg).transpose(1, 2).unsqueeze(1).repeat(1, 1, 1,
             #                                                                                 carrier_encoded.shape[3])
 
-            concatenated_feature = torch.cat((carrier_encoded, stft_result[:, :, :,
-                                                               i*self.delay_amt:self.voice_prefilling + i*self.delay_amt], watermark_encoded), dim=1)
+            concatenated_feature = torch.cat(
+                (
+                    carrier_encoded,
+                    stft_result[
+                        :,
+                        :,
+                        :,
+                        i * self.delay_amt : self.voice_prefilling + i * self.delay_amt,
+                    ],
+                    watermark_encoded,
+                ),
+                dim=1,
+            )
             # [B, 2, bins, length]
             # Embed the watermark
             carrier_watermarked = self.EM(concatenated_feature)
@@ -212,13 +347,13 @@ class Encoder(nn.Module):
                 stft_result, watermark, self.voice_prefilling
             )
             del list_of_watermarks
-            mask=stft_result!=0
-            all_watermark_stft = all_watermark_stft*mask + 0.0000001
+            mask = stft_result != 0
+            all_watermark_stft = all_watermark_stft * mask + 0.0000001
 
             # Recompute magnitude & phase
             real_part = all_watermark_stft[:, 0, :, :]
             imag_part = all_watermark_stft[:, 1, :, :]
-            spect = torch.sqrt(real_part ** 2 + imag_part ** 2)
+            spect = torch.sqrt(real_part**2 + imag_part**2)
             phase = torch.atan2(imag_part, real_part)
 
             y = self.stft.inverse(spect, phase).squeeze(1)
@@ -245,41 +380,63 @@ class Encoder(nn.Module):
                     dilate_chunks = 1
 
             # 2) Soft step around the threshold
-            m_chunk = torch.sigmoid((p - self.vad_threshold) / self.tau)  # [B, C] in (0, 1)
+            m_chunk = torch.sigmoid(
+                (p - self.vad_threshold) / self.tau
+            )  # [B, C] in (0, 1)
 
             # 3) Smooth in chunk space (moving average)
             if smooth_chunks > 1:
-                k = torch.ones(1, 1, smooth_chunks, device=y.device, dtype=y.dtype) / smooth_chunks
+                k = (
+                    torch.ones(1, 1, smooth_chunks, device=y.device, dtype=y.dtype)
+                    / smooth_chunks
+                )
                 z = m_chunk.unsqueeze(1)  # [B,1,C]
                 pad = smooth_chunks // 2
-                z = F.pad(z, (pad, pad), mode='replicate')
+                z = F.pad(z, (pad, pad), mode="replicate")
                 m_chunk = F.conv1d(z, k, stride=1).squeeze(1)  # [B, C]
 
             # 4) Dilate voiced regions by max-pool
             if dilate_chunks > 0:
                 z = m_chunk.unsqueeze(1)  # [B,1,C]
                 pad = dilate_chunks
-                z = F.pad(z, (pad, pad), mode='replicate')
-                m_chunk = F.max_pool1d(z, kernel_size=2 * pad + 1, stride=1).squeeze(1)  # [B, C]
+                z = F.pad(z, (pad, pad), mode="replicate")
+                m_chunk = F.max_pool1d(z, kernel_size=2 * pad + 1, stride=1).squeeze(
+                    1
+                )  # [B, C]
 
             # 5) Upsample to sample grid
-            m_up = F.interpolate(m_chunk.unsqueeze(1), size=self.stft.num_samples, mode='linear', align_corners=True).squeeze(1)  # [B, T]
+            m_up = F.interpolate(
+                m_chunk.unsqueeze(1),
+                size=self.stft.num_samples,
+                mode="linear",
+                align_corners=True,
+            ).squeeze(
+                1
+            )  # [B, T]
 
             # After computing m_up ...
             frame_size = 512
-            rms = x.unfold(-1, frame_size, frame_size // 2)  # [B, num_frames, frame_size]
+            rms = x.unfold(
+                -1, frame_size, frame_size // 2
+            )  # [B, num_frames, frame_size]
             rms = rms.pow(2).mean(dim=-1).sqrt()  # [B, num_frames]
             # Normalize RMS into [0,1] (prevent divide-by-zero)
             rms = rms / (rms.max(dim=1, keepdim=True).values + 1e-8)
 
             # Upsample RMS back to sample level and map to floor in [floor_min,floor_max].
-            dynamic_floor = F.interpolate(rms.unsqueeze(1), size=self.stft.num_samples,
-                                          mode='linear', align_corners=True).squeeze(1)
+            dynamic_floor = F.interpolate(
+                rms.unsqueeze(1),
+                size=self.stft.num_samples,
+                mode="linear",
+                align_corners=True,
+            ).squeeze(1)
             floor_min, floor_max = 0.05, 0.2
             dynamic_floor = floor_min + (floor_max - floor_min) * dynamic_floor
 
             # Now build the mask using this per-sample floor
-            soft_sample_masks = (dynamic_floor + (1.0 - dynamic_floor) * m_up).clamp_(0.0, 1.0)
+            soft_sample_masks = (dynamic_floor + (1.0 - dynamic_floor) * m_up).clamp_(
+                0.0, 1.0
+            )
 
             # # 6) Floor ε so mask ∈ [ε, 1]
             # soft_sample_masks = (self.floor_eps + (1.0 - self.floor_eps) * m_up).clamp_(0.0, 1.0)  # [B, T]
@@ -310,44 +467,82 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.robust = model_config["robust"]
         self.original_sample_rate = process_config["audio"]["or_sample_rate"]
-        self.mel_transform = TacotronSTFT(filter_length=process_config["mel"]["n_fft"], hop_length=process_config["mel"]["hop_length"], win_length=process_config["mel"]["win_length"])
+        self.mel_transform = TacotronSTFT(
+            filter_length=process_config["mel"]["n_fft"],
+            hop_length=process_config["mel"]["hop_length"],
+            win_length=process_config["mel"]["win_length"],
+        )
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         self.win_dim = int((process_config["mel"]["n_fft"] / 2) + 1)
         self.hop_length = process_config["mel"]["hop_length"]
+        self.distortion = train_config["optimize"]["distortion"]
+        self.cutoff_freq_low = 500
+        self.cutoff_freq_high = 2000
         self.block = model_config["conv2"]["block"]
-        self.EX = WatermarkExtracter(input_channel=2, hidden_dim=model_config["conv2"]["hidden_dim"], block=self.block)
-        self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
+        self.EX = WatermarkExtracter(
+            input_channel=2,
+            hidden_dim=model_config["conv2"]["hidden_dim"],
+            block=self.block,
+        )
+        self.stft = fixed_STFT(
+            process_config["mel"]["n_fft"],
+            process_config["mel"]["hop_length"],
+            process_config["mel"]["win_length"],
+        )
 
         # self.msg_linear_out = FCBlock(self.win_dim, msg_length, activation=LeakyReLU(inplace=True))
-        self.msg_linear_out = FCBlock(self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True))
+        self.msg_linear_out = FCBlock(
+            self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
+        )
 
     def forward(self, y, global_step=1):
         y_identity = y
-        # if global_step > self.vocoder_step:
-        #     y_mel = self.mel_transform.mel_spectrogram(y.squeeze(1))
-        #     # y = self.vocoder(y_mel)
-        #     y_d = (self.mel_transform.griffin_lim(magnitudes=y_mel)).unsqueeze(1)
-        # else:
-        #     y_d = y
-        y_d = y
+        if self.distortion:
+            # Load demo assets and resample to sample_rate
+            rir, _ = _get_phone_assets(self.original_sample_rate)
+            rir = rir.to(y.device)
+            noise = torch.randn_like(y)
+            # Apply RIR
+            rir_applied = fftconvolve(y, rir, mode="same")
+            snr_db = torch.randint(20, 26, (1,), device=y.device)
+            bg_added = add_noise(rir_applied, noise, snr_db)
+
+            y_d = julius.bandpass_filter(
+                bg_added,
+                cutoff_low=self.cutoff_freq_low / self.original_sample_rate,
+                cutoff_high=self.cutoff_freq_high / self.original_sample_rate,
+            )
+
+        else:
+            y_d = y
 
         spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
         # Explicitly split the 162-dim vector into two halves of 81-dim each
-        low, high = extracted_wm.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
-        low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1,2)
+        low, high = extracted_wm.chunk(
+            2, dim=1
+        )  # each has shape [B, win_dim / 2, length]
+        low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1, 2)
         high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
-        msg_avg = (low_msg + high_msg) / 2  # Average the two halves -> shape: [B, 1, 81]
+        msg_avg = (
+            low_msg + high_msg
+        ) / 2  # Average the two halves -> shape: [B, 1, 81]
         # msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1,2)
         # msg = self.msg_linear_out(msg)
         msg = self.msg_linear_out(msg_avg)
 
         _, _, stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
-        low_identity, high_identity = extracted_wm_identity.chunk(2, dim=1)  # each has shape [B, win_dim / 2, length]
+        low_identity, high_identity = extracted_wm_identity.chunk(
+            2, dim=1
+        )  # each has shape [B, win_dim / 2, length]
         low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
-        high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(1, 2)
-        msg_avg_identity = (low_msg_identity + high_msg_identity) / 2  # Average the two halves -> shape: [B, 1, 81]
+        high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(
+            1, 2
+        )
+        msg_avg_identity = (
+            low_msg_identity + high_msg_identity
+        ) / 2  # Average the two halves -> shape: [B, 1, 81]
         # msg_identity = torch.mean(extracted_wm_identity,dim=2, keepdim=True).transpose(1,2)
         # msg_identity = self.msg_linear_out(msg_identity)
         msg_identity = self.msg_linear_out(msg_avg_identity)
@@ -359,13 +554,17 @@ class Discriminator(nn.Module):
     def __init__(self, process_config):
         super(Discriminator, self).__init__()
         self.conv = nn.Sequential(
-                ReluBlock(2,16,3,1,1),
-                ReluBlock(16,32,3,1,1),
-                ReluBlock(32,64,3,1,1),
-                nn.AdaptiveAvgPool2d(output_size=(1, 1))
-                )
-        self.linear = nn.Linear(64,1)
-        self.stft = fixed_STFT(process_config["mel"]["n_fft"], process_config["mel"]["hop_length"], process_config["mel"]["win_length"])
+            ReluBlock(2, 16, 3, 1, 1),
+            ReluBlock(16, 32, 3, 1, 1),
+            ReluBlock(32, 64, 3, 1, 1),
+            nn.AdaptiveAvgPool2d(output_size=(1, 1)),
+        )
+        self.linear = nn.Linear(64, 1)
+        self.stft = fixed_STFT(
+            process_config["mel"]["n_fft"],
+            process_config["mel"]["hop_length"],
+            process_config["mel"]["win_length"],
+        )
 
     def forward(self, x):
         _, _, stft_result = self.stft.transform(x)
