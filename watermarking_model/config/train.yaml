@@ -15,7 +15,7 @@ path:
 watermark:
   length: 10
   delay_amt_second: 0.5
-  future_amt_second: 0.25
+  future_amt_second: 1.0
 
 optimize:
   lr: 0.0001
