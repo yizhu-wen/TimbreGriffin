@@ -43,7 +43,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 if torch.cuda.is_available():
     pc = torch.backends.cuda.cufft_plan_cache
-    pc.max_size = 256  # start here
+    pc.max_size = 128  # start here
 
     # optional warmup logic
     # run a few warmup batches first, then:
