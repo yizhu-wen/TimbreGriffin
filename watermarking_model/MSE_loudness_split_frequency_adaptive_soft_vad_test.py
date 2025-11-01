@@ -532,18 +532,17 @@ class Decoder(nn.Module):
     def __init__(self, process_config, model_config, train_config, msg_length):
         super(Decoder, self).__init__()
         self.robust = model_config["robust"]
-        self.original_sample_rate = process_config["audio"]["or_sample_rate"]
+        # if self.robust:
+        #     self.dl = distortion(process_config, train_config)
         self.mel_transform = TacotronSTFT(
             filter_length=process_config["mel"]["n_fft"],
             hop_length=process_config["mel"]["hop_length"],
             win_length=process_config["mel"]["win_length"],
         )
+        # self.vocoder = get_vocoder(device)
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         self.win_dim = int((process_config["mel"]["n_fft"] / 2) + 1)
         self.hop_length = process_config["mel"]["hop_length"]
-        self.distortion = False
-        self.cutoff_freq_low = 500
-        self.cutoff_freq_high = 2000
         self.block = model_config["conv2"]["block"]
         self.EX = WatermarkExtracter(
             input_channel=2,
@@ -561,26 +560,15 @@ class Decoder(nn.Module):
             self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
         )
 
-    def forward(self, y, global_step=1):
+    def forward(self, y, global_step):
         y_identity = y
-        if self.distortion:
-            # Load demo assets and resample to sample_rate
-            rir, _ = _get_phone_assets(self.original_sample_rate)
-            rir = rir.to(y.device)
-            noise = torch.randn_like(y)
-            # Apply RIR
-            rir_applied = fftconvolve(y, rir, mode="same")
-            snr_db = torch.randint(20, 26, (1,), device=y.device)
-            bg_added = add_noise(rir_applied, noise, snr_db)
-
-            y_d = julius.bandpass_filter(
-                bg_added,
-                cutoff_low=self.cutoff_freq_low / self.original_sample_rate,
-                cutoff_high=self.cutoff_freq_high / self.original_sample_rate,
-            )
-
-        else:
-            y_d = y
+        # if global_step > self.vocoder_step:
+        #     y_mel = self.mel_transform.mel_spectrogram(y.squeeze(1))
+        #     # y = self.vocoder(y_mel)
+        #     y_d = (self.mel_transform.griffin_lim(magnitudes=y_mel)).unsqueeze(1)
+        # else:
+        #     y_d = y
+        y_d = y
 
         spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
@@ -627,7 +615,7 @@ encoder = Encoder(
 decoder = Decoder(
     process_config, model_config, train_config, train_config["watermark"]["length"]
 ).to(device)
-checkpoint_path = "results/ckpt/pth/MSE_loudness_split_frequency_adaptive_soft_vad_phone_distortion_ep_60_2025-10-24_12_08_46.pth.tar"
+checkpoint_path = "results/ckpt/pth/MSE_loudness_split_frequency_adaptive_soft_vad_ep_30_2025-09-17_06_50_13.pth.tar"
 checkpoint = torch.load(checkpoint_path, map_location=device)
 encoder.load_state_dict(checkpoint["encoder"])
 decoder.load_state_dict(checkpoint["decoder"])
@@ -702,8 +690,7 @@ for dataset in datasets:
     results_dir.mkdir(parents=True, exist_ok=True)
 
     csv_path = (
-        results_dir
-        / "MSE_loudness_split_frequency_adaptive_soft_vad_phone_distortion_clean_eval.csv"
+        results_dir / "MSE_loudness_split_frequency_adaptive_soft_vad_clean_eval.csv"
     )
 
     # write header once if file does not exist yet
@@ -902,7 +889,7 @@ for dataset in datasets:
 
         robust_csv_path = (
             results_dir
-            / "MSE_loudness_split_frequency_adaptive_soft_vad_phone_distortion_robust_eval.csv"
+            / "MSE_loudness_split_frequency_adaptive_soft_vad_robust_eval.csv"
         )
         file_exists = robust_csv_path.exists()
 
