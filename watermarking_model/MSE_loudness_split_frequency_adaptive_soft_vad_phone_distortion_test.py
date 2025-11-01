@@ -179,7 +179,7 @@ def splice_with_irrelevant_scattered(
 import torch.nn as nn
 from silero_vad import load_silero_vad
 from torch.nn import LeakyReLU
-from watermarking_model.model.blocks import (
+from model.blocks import (
     FCBlock,
     Conv2Encoder,
     WatermarkEmbedder,
