@@ -145,7 +145,7 @@ class distortion(nn.Module):
         y = self.resample_kernel2_re(self.resample_kernel2(y))
         return y
 
-    def white_noise(self, y, ratio=10):  # SNR = 10log(ps/pn)
+    def white_noise(self, y, ratio=20):  # SNR = 10log(ps/pn)
         SNR = ratio
         mean = 0.0
         RMS_s = torch.sqrt(torch.mean(y**2, dim=2))

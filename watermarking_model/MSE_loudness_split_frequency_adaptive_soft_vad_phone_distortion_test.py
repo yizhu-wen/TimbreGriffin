@@ -788,6 +788,7 @@ for dataset in datasets:
     }
     # Only include attacks that return WAVEFORMS (skip 17/18/21/23/25 which return spectrograms)
     wave_attacks = [
+        9,
         27,
         28,
         29,
@@ -799,7 +800,7 @@ for dataset in datasets:
         4: 10,
         5: 10,
         6: 10,  # 10% cropping
-        9: 10,  # noise SNR (dB)
+        9: 20,  # noise SNR (dB)
         10: 50,  # amplitude scale (%)
         11: 64,  # mp3 kbps
         13: 3,  # median filter window
