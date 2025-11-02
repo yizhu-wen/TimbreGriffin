@@ -58,6 +58,30 @@ def _get_phone_assets(target_sr: int) -> Tuple[torch.Tensor, torch.Tensor]:
     return rir, noise
 
 
+def recount(y):
+    # y is assumed to be in [-1, 1]
+
+    nlevels = 2**8 - 1  # 255 for 8 bits
+
+    y_scaled01 = (y + 1.0) / 2.0
+    y_scaled255 = y_scaled01 * nlevels
+    y_rounded = torch.round(y_scaled255)
+    y_q = (y_rounded / nlevels) * 2.0 - 1.0
+
+    y_straight_through = y + (y_q - y).detach()
+
+    return y_straight_through
+
+
+def resample8k(y):
+    resample_kernel_8k_re = julius.ResampleFrac(
+        16000,
+        8000,
+    ).to(y.device)
+    y = resample_kernel_8k_re(resample_kernel_8k_re(y))
+    return y
+
+
 def save_spectrum(y, flag="linear"):
     import numpy as np
     import os
@@ -493,20 +517,44 @@ class Decoder(nn.Module):
     def forward(self, y, global_step=1):
         y_identity = y
         if self.distortion:
-            # Load demo assets and resample to sample_rate
-            rir, _ = _get_phone_assets(self.original_sample_rate)
-            rir = rir.to(y.device)
-            noise = torch.randn_like(y)
-            # Apply RIR
-            rir_applied = fftconvolve(y, rir, mode="same")
-            snr_db = torch.randint(20, 26, (1,), device=y.device)
-            bg_added = add_noise(rir_applied, noise, snr_db)
 
-            y_d = julius.bandpass_filter(
-                bg_added,
-                cutoff_low=self.cutoff_freq_low / self.original_sample_rate,
-                cutoff_high=self.cutoff_freq_high / self.original_sample_rate,
-            )
+            # pick which augmentation to apply, uniformly at random
+            # shape [] scalar int in {0,1,2}
+            choice = torch.randint(low=0, high=3, size=(1,), device=y.device).item()
+
+            if choice == 0:
+                # distortion 1: resample
+                # assumes resample8k: 8k -> 16k or etc, returns same dtype and device
+                y_d = resample8k(y)
+
+            elif choice == 1:
+                # distortion 2: quantization style recount
+                # if recount is a method on self, use self.recount(y)
+                y_d = recount(y)
+
+            else:
+                # distortion 3: room impulse response + noise + bandpass
+
+                # get demo RIR and make sure it's on same device
+                rir, _ = _get_phone_assets(self.original_sample_rate)
+                rir = rir.to(y.device)
+
+                noise = torch.randn_like(y)
+
+                # convolve with RIR to simulate channel / mic response
+                rir_applied = fftconvolve(y, rir, mode="same")
+
+                # random SNR between 20 and 25 dB, integer
+                snr_db = torch.randint(20, 26, (1,), device=y.device)
+
+                bg_added = add_noise(rir_applied, noise, snr_db)
+
+                # bandpass in normalized cutoff units [0, 0.5] if julius expects that
+                y_d = julius.bandpass_filter(
+                    bg_added,
+                    cutoff_low=self.cutoff_freq_low / self.original_sample_rate,
+                    cutoff_high=self.cutoff_freq_high / self.original_sample_rate,
+                )
 
         else:
             y_d = y
