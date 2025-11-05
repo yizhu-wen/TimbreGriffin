@@ -17,6 +17,7 @@ from torchaudio.functional.filtering import highpass_biquad, treble_biquad
 #         msg_loss = self.msg_loss(msg, rec_msg)
 #         return embedding_loss, msg_loss
 
+
 def basic_loudness(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
     """This is a simpler loudness function that is more stable.
     Args:
@@ -43,7 +44,9 @@ def basic_loudness(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
     energy = torch.mean(energy, dim=-1)
 
     # Compute channel-weighted summation
-    g = torch.tensor([1.0, 1.0, 1.0, 1.41, 1.41], dtype=waveform.dtype, device=waveform.device)
+    g = torch.tensor(
+        [1.0, 1.0, 1.0, 1.41, 1.41], dtype=waveform.dtype, device=waveform.device
+    )
     g = g[: energy.size(-2)]
 
     energy_weighted = torch.sum(g.unsqueeze(-1) * energy, dim=-2)
@@ -81,6 +84,7 @@ class TFLoudnessRatio(nn.Module):
         n_bands (int): number of bands to separate
         temperature (float): temperature of the softmax step
     """
+
     def __init__(
         self,
         sample_rate: int = 16000,
@@ -114,8 +118,12 @@ class TFLoudnessRatio(nn.Module):
         bands_out = self.filter(out_sig).view(B * self.n_bands, 1, -1)
         frame = int(self.segment * self.sample_rate)
         stride = int(frame * (1 - self.overlap))
-        gt = _unfold(bands_ref, frame, stride).squeeze(1).contiguous().view(-1, 1, frame)
-        est = _unfold(bands_out, frame, stride).squeeze(1).contiguous().view(-1, 1, frame)
+        gt = (
+            _unfold(bands_ref, frame, stride).squeeze(1).contiguous().view(-1, 1, frame)
+        )
+        est = (
+            _unfold(bands_out, frame, stride).squeeze(1).contiguous().view(-1, 1, frame)
+        )
         l_noise = basic_loudness(est - gt, sample_rate=self.sample_rate)  # watermark
         l_ref = basic_loudness(gt, sample_rate=self.sample_rate)  # ground truth
         l_ratio = (l_noise - l_ref).view(-1, B)
@@ -129,10 +137,10 @@ class Loss_identity(nn.Module):
         self.embedding_loss = nn.MSELoss()
         self.msg_loss = nn.MSELoss()
         self.tfloudness_loss = TFLoudnessRatio(n_bands=16)
-    
+
     def en_de_loss(self, x, w_x, msg, rec_msg):
         embedding_loss = self.embedding_loss(x, w_x)
         msg_loss = self.msg_loss(msg, rec_msg[0]) + self.msg_loss(msg, rec_msg[1])
-        loudness_loss = self.tfloudness_loss(w_x.unsqueeze(1), x.unsqueeze(1))
-        # loudness_loss = torch.tensor(0.0, device='cuda:0')
+        # loudness_loss = self.tfloudness_loss(w_x.unsqueeze(1), x.unsqueeze(1))
+        loudness_loss = torch.tensor(0.0, device="cuda:0")
         return embedding_loss, msg_loss, loudness_loss
