@@ -515,10 +515,10 @@ class Decoder(nn.Module):
             process_config["mel"]["win_length"],
         )
 
-        # self.msg_linear_out = FCBlock(self.win_dim, msg_length, activation=LeakyReLU(inplace=True))
-        self.msg_linear_out = FCBlock(
-            self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
-        )
+        self.msg_linear_out = FCBlock(self.win_dim, msg_length, activation=LeakyReLU(inplace=True))
+        # self.msg_linear_out = FCBlock(
+        #     self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
+        # )
 
     def forward(self, y, global_step=1):
         y_identity = y
