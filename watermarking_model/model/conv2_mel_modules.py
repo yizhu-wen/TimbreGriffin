@@ -481,7 +481,28 @@ class Encoder(nn.Module):
             # # Apply the mask to the original audio to zero out non-speech regions.
             # masked_y = y * sample_masks
 
-            return y, zeros_right.shape[-1]
+            with torch.no_grad():
+                # Get chunk-level speech probabilities for the batch.
+                # The output shape should be [batch, num_chunks]
+                batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
+
+            # Threshold the probabilities to obtain a binary mask per chunk.
+            batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
+
+            # Upsample the chunk-level mask to a sample-level mask.
+            # Each chunk's decision is repeated for chunk_size samples.
+            sample_masks = torch.repeat_interleave(batch_chunk_mask, 512, dim=1).to(
+                y.device
+            )
+
+            # Since the upsampled mask might be longer than the actual audio length,
+            # slice the mask to match the original number of samples.
+            sample_length = x.shape[-1]
+            sample_masks = sample_masks[:, :sample_length]
+
+            # Apply the mask to the original audio to zero out non-speech regions.
+            masked_y = y * sample_masks
+            return masked_y, zeros_right.shape[-1]
         else:
             print("Not enough watermarking!!!!")
             return None
@@ -515,7 +536,9 @@ class Decoder(nn.Module):
             process_config["mel"]["win_length"],
         )
 
-        self.msg_linear_out = FCBlock(self.win_dim, msg_length, activation=LeakyReLU(inplace=True))
+        self.msg_linear_out = FCBlock(
+            self.win_dim, msg_length, activation=LeakyReLU(inplace=True)
+        )
         # self.msg_linear_out = FCBlock(
         #     self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
         # )
