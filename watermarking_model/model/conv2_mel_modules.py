@@ -522,12 +522,12 @@ class Decoder(nn.Module):
             # shape [] scalar int in {0,1,2}
             choice = torch.randint(low=1, high=3, size=(1,), device=y.device).item()
 
-            if choice == 0:
+            if choice == 1:
                 # distortion 1: resample
                 # assumes resample8k: 8k -> 16k or etc, returns same dtype and device
                 y_d = resample8k(y)
 
-            elif choice == 1:
+            elif choice == 0:
                 # distortion 2: quantization style recount
                 # if recount is a method on self, use self.recount(y)
                 y_d = recount(y)
