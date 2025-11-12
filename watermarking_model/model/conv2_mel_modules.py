@@ -549,7 +549,7 @@ class Decoder(nn.Module):
 
             # pick which augmentation to apply, uniformly at random
             # shape [] scalar int in {0,1,2}
-            choice = torch.randint(low=1, high=3, size=(1,), device=y.device).item()
+            choice = torch.randint(low=0, high=3, size=(1,), device=y.device).item()
 
             if choice == 1:
                 # distortion 1: resample
