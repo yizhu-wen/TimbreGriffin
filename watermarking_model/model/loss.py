@@ -107,6 +107,7 @@ class TFLoudnessRatio(nn.Module):
             self.filter = julius.SplitBands(sample_rate=sample_rate, n_bands=n_bands)
 
     def forward(self, out_sig: torch.Tensor, ref_sig: torch.Tensor) -> torch.Tensor:
+        print("HI!!!!!!!!!!!!!!!!!!!!!!!!!!")
         B, C, T = ref_sig.shape
         device = out_sig.device
         assert ref_sig.shape == out_sig.shape
