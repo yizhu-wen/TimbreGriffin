@@ -241,12 +241,12 @@ class Encoder(nn.Module):
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         # MLP for the input wm
-        self.msg_linear_in = FCBlock(
-            msg_length, self.win_dim, activation=LeakyReLU(inplace=True)
-        )
         # self.msg_linear_in = FCBlock(
-        #     msg_length, self.win_dim // 2, activation=LeakyReLU(inplace=True)
+        #     msg_length, self.win_dim, activation=LeakyReLU(inplace=True)
         # )
+        self.msg_linear_in = FCBlock(
+            msg_length, self.win_dim // 2, activation=LeakyReLU(inplace=True)
+        )
 
         # stft transform
         self.stft = fixed_STFT(
@@ -334,18 +334,18 @@ class Encoder(nn.Module):
             # torch.Size([B, 81, 1])
             # torch.Size([B, 1, 81, 1])
             # torch.Size([B, 1, 162, 201])
-            # watermark_encoded = (
-            #     self.msg_linear_in(msg)
-            #     .transpose(1, 2)
-            #     .unsqueeze(1)
-            #     .repeat(1, 1, 2, carrier_encoded.shape[3])
-            # )
             watermark_encoded = (
                 self.msg_linear_in(msg)
                 .transpose(1, 2)
                 .unsqueeze(1)
-                .repeat(1, 1, 1, carrier_encoded.shape[3])
+                .repeat(1, 1, 2, carrier_encoded.shape[3])
             )
+            # watermark_encoded = (
+            #     self.msg_linear_in(msg)
+            #     .transpose(1, 2)
+            #     .unsqueeze(1)
+            #     .repeat(1, 1, 1, carrier_encoded.shape[3])
+            # )
 
             concatenated_feature = torch.cat(
                 (
@@ -384,89 +384,89 @@ class Encoder(nn.Module):
             y = self.stft.inverse(spect, phase).squeeze(1)
             del spect, phase, real_part, imag_part, all_watermark_stft
 
-            # with torch.no_grad():
-            #     # Get chunk-level speech probabilities for the batch.
-            #     # The output shape should be [batch, num_chunks]
-            #     batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
-            # p = batch_chunk_probs.to(device=y.device, dtype=y.dtype)  # [B, C]
-            # C = p.shape[-1]
-            #
-            # # --- infer hop in ms from C, T, sr ---
-            # # chunks_per_sec = C * sr / T; hop_ms = 1000 / chunks_per_sec
-            # hop_ms = 1000.0 * self.stft.num_samples / (C * self.sampling_rate)
-            #
-            # # If caller didn't fix counts, compute them from target ms
-            # if self.smooth_chunks is None:
-            #     smooth_chunks = max(1, int(round(self.target_smooth_ms / hop_ms)))
-            # if self.dilate_chunks is None:
-            #     dilate_chunks = max(0, int(round(self.target_dilate_ms / hop_ms)))
-            #     # in practice keep at least 1 for robustness at edges
-            #     if dilate_chunks == 0:
-            #         dilate_chunks = 1
-            #
-            # # 2) Soft step around the threshold
-            # m_chunk = torch.sigmoid(
-            #     (p - self.vad_threshold) / self.tau
-            # )  # [B, C] in (0, 1)
-            #
-            # # 3) Smooth in chunk space (moving average)
-            # if smooth_chunks > 1:
-            #     k = (
-            #         torch.ones(1, 1, smooth_chunks, device=y.device, dtype=y.dtype)
-            #         / smooth_chunks
-            #     )
-            #     z = m_chunk.unsqueeze(1)  # [B,1,C]
-            #     pad = smooth_chunks // 2
-            #     z = F.pad(z, (pad, pad), mode="replicate")
-            #     m_chunk = F.conv1d(z, k, stride=1).squeeze(1)  # [B, C]
-            #
-            # # 4) Dilate voiced regions by max-pool
-            # if dilate_chunks > 0:
-            #     z = m_chunk.unsqueeze(1)  # [B,1,C]
-            #     pad = dilate_chunks
-            #     z = F.pad(z, (pad, pad), mode="replicate")
-            #     m_chunk = F.max_pool1d(z, kernel_size=2 * pad + 1, stride=1).squeeze(
-            #         1
-            #     )  # [B, C]
-            #
-            # # 5) Upsample to sample grid
-            # m_up = F.interpolate(
-            #     m_chunk.unsqueeze(1),
-            #     size=self.stft.num_samples,
-            #     mode="linear",
-            #     align_corners=True,
-            # ).squeeze(
-            #     1
-            # )  # [B, T]
-            #
-            # # After computing m_up ...
-            # frame_size = 512
-            # rms = x.unfold(
-            #     -1, frame_size, frame_size // 2
-            # )  # [B, num_frames, frame_size]
-            # rms = rms.pow(2).mean(dim=-1).sqrt()  # [B, num_frames]
-            # # Normalize RMS into [0,1] (prevent divide-by-zero)
-            # rms = rms / (rms.max(dim=1, keepdim=True).values + 1e-8)
-            #
-            # # Upsample RMS back to sample level and map to floor in [floor_min,floor_max].
-            # dynamic_floor = F.interpolate(
-            #     rms.unsqueeze(1),
-            #     size=self.stft.num_samples,
-            #     mode="linear",
-            #     align_corners=True,
-            # ).squeeze(1)
-            # floor_min, floor_max = 0.05, 0.2
-            # dynamic_floor = floor_min + (floor_max - floor_min) * dynamic_floor
-            #
-            # # Now build the mask using this per-sample floor
-            # soft_sample_masks = (dynamic_floor + (1.0 - dynamic_floor) * m_up).clamp_(
-            #     0.0, 1.0
-            # )
+            with torch.no_grad():
+                # Get chunk-level speech probabilities for the batch.
+                # The output shape should be [batch, num_chunks]
+                batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
+            p = batch_chunk_probs.to(device=y.device, dtype=y.dtype)  # [B, C]
+            C = p.shape[-1]
+
+            # --- infer hop in ms from C, T, sr ---
+            # chunks_per_sec = C * sr / T; hop_ms = 1000 / chunks_per_sec
+            hop_ms = 1000.0 * self.stft.num_samples / (C * self.sampling_rate)
+
+            # If caller didn't fix counts, compute them from target ms
+            if self.smooth_chunks is None:
+                smooth_chunks = max(1, int(round(self.target_smooth_ms / hop_ms)))
+            if self.dilate_chunks is None:
+                dilate_chunks = max(0, int(round(self.target_dilate_ms / hop_ms)))
+                # in practice keep at least 1 for robustness at edges
+                if dilate_chunks == 0:
+                    dilate_chunks = 1
+
+            # 2) Soft step around the threshold
+            m_chunk = torch.sigmoid(
+                (p - self.vad_threshold) / self.tau
+            )  # [B, C] in (0, 1)
+
+            # 3) Smooth in chunk space (moving average)
+            if smooth_chunks > 1:
+                k = (
+                    torch.ones(1, 1, smooth_chunks, device=y.device, dtype=y.dtype)
+                    / smooth_chunks
+                )
+                z = m_chunk.unsqueeze(1)  # [B,1,C]
+                pad = smooth_chunks // 2
+                z = F.pad(z, (pad, pad), mode="replicate")
+                m_chunk = F.conv1d(z, k, stride=1).squeeze(1)  # [B, C]
+
+            # 4) Dilate voiced regions by max-pool
+            if dilate_chunks > 0:
+                z = m_chunk.unsqueeze(1)  # [B,1,C]
+                pad = dilate_chunks
+                z = F.pad(z, (pad, pad), mode="replicate")
+                m_chunk = F.max_pool1d(z, kernel_size=2 * pad + 1, stride=1).squeeze(
+                    1
+                )  # [B, C]
+
+            # 5) Upsample to sample grid
+            m_up = F.interpolate(
+                m_chunk.unsqueeze(1),
+                size=self.stft.num_samples,
+                mode="linear",
+                align_corners=True,
+            ).squeeze(
+                1
+            )  # [B, T]
+
+            # After computing m_up ...
+            frame_size = 512
+            rms = x.unfold(
+                -1, frame_size, frame_size // 2
+            )  # [B, num_frames, frame_size]
+            rms = rms.pow(2).mean(dim=-1).sqrt()  # [B, num_frames]
+            # Normalize RMS into [0,1] (prevent divide-by-zero)
+            rms = rms / (rms.max(dim=1, keepdim=True).values + 1e-8)
+
+            # Upsample RMS back to sample level and map to floor in [floor_min,floor_max].
+            dynamic_floor = F.interpolate(
+                rms.unsqueeze(1),
+                size=self.stft.num_samples,
+                mode="linear",
+                align_corners=True,
+            ).squeeze(1)
+            floor_min, floor_max = 0.05, 0.2
+            dynamic_floor = floor_min + (floor_max - floor_min) * dynamic_floor
+
+            # Now build the mask using this per-sample floor
+            soft_sample_masks = (dynamic_floor + (1.0 - dynamic_floor) * m_up).clamp_(
+                0.0, 1.0
+            )
 
             # # 6) Floor ε so mask ∈ [ε, 1]
             # soft_sample_masks = (self.floor_eps + (1.0 - self.floor_eps) * m_up).clamp_(0.0, 1.0)  # [B, T]
 
-            # masked_y = y * soft_sample_masks
+            masked_y = y * soft_sample_masks
             # # Threshold the probabilities to obtain a binary mask per chunk.
             # batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
             #
@@ -481,27 +481,6 @@ class Encoder(nn.Module):
             # # Apply the mask to the original audio to zero out non-speech regions.
             # masked_y = y * sample_masks
 
-            with torch.no_grad():
-                # Get chunk-level speech probabilities for the batch.
-                # The output shape should be [batch, num_chunks]
-                batch_chunk_probs = self.vad.audio_forward(x, sr=self.sampling_rate)
-
-            # Threshold the probabilities to obtain a binary mask per chunk.
-            batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
-
-            # Upsample the chunk-level mask to a sample-level mask.
-            # Each chunk's decision is repeated for chunk_size samples.
-            sample_masks = torch.repeat_interleave(batch_chunk_mask, 512, dim=1).to(
-                y.device
-            )
-
-            # Since the upsampled mask might be longer than the actual audio length,
-            # slice the mask to match the original number of samples.
-            sample_length = x.shape[-1]
-            sample_masks = sample_masks[:, :sample_length]
-
-            # Apply the mask to the original audio to zero out non-speech regions.
-            masked_y = y * sample_masks
             return masked_y, zeros_right.shape[-1]
         else:
             print("Not enough watermarking!!!!")
@@ -536,12 +515,12 @@ class Decoder(nn.Module):
             process_config["mel"]["win_length"],
         )
 
-        self.msg_linear_out = FCBlock(
-            self.win_dim, msg_length, activation=LeakyReLU(inplace=True)
-        )
         # self.msg_linear_out = FCBlock(
-        #     self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
+        #     self.win_dim, msg_length, activation=LeakyReLU(inplace=True)
         # )
+        self.msg_linear_out = FCBlock(
+            self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
+        )
 
     def forward(self, y, global_step=1):
         y_identity = y
@@ -549,7 +528,7 @@ class Decoder(nn.Module):
 
             # pick which augmentation to apply, uniformly at random
             # shape [] scalar int in {0,1,2}
-            choice = torch.randint(low=0, high=3, size=(1,), device=y.device).item()
+            choice = torch.randint(low=1, high=3, size=(1,), device=y.device).item()
 
             if choice == 1:
                 # distortion 1: resample
@@ -591,35 +570,35 @@ class Decoder(nn.Module):
         spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
         # Explicitly split the 162-dim vector into two halves of 81-dim each
-        # low, high = extracted_wm.chunk(
-        #     2, dim=1
-        # )  # each has shape [B, win_dim / 2, length]
-        # low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1, 2)
-        # high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
-        # msg_avg = (
-        #     low_msg + high_msg
-        # ) / 2  # Average the two halves -> shape: [B, 1, 81]
-        msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1, 2)
-        msg = self.msg_linear_out(msg)
-        # msg = self.msg_linear_out(msg_avg)
+        low, high = extracted_wm.chunk(
+            2, dim=1
+        )  # each has shape [B, win_dim / 2, length]
+        low_msg = torch.mean(low, dim=2, keepdim=True).transpose(1, 2)
+        high_msg = torch.mean(high, dim=2, keepdim=True).transpose(1, 2)
+        msg_avg = (
+            low_msg + high_msg
+        ) / 2  # Average the two halves -> shape: [B, 1, 81]
+        # msg = torch.mean(extracted_wm, dim=2, keepdim=True).transpose(1, 2)
+        # msg = self.msg_linear_out(msg)
+        msg = self.msg_linear_out(msg_avg)
 
         _, _, stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
-        # low_identity, high_identity = extracted_wm_identity.chunk(
-        #     2, dim=1
-        # )  # each has shape [B, win_dim / 2, length]
-        # low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
-        # high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(
-        #     1, 2
-        # )
-        # msg_avg_identity = (
-        #     low_msg_identity + high_msg_identity
-        # ) / 2  # Average the two halves -> shape: [B, 1, 81]
-        msg_identity = torch.mean(extracted_wm_identity, dim=2, keepdim=True).transpose(
+        low_identity, high_identity = extracted_wm_identity.chunk(
+            2, dim=1
+        )  # each has shape [B, win_dim / 2, length]
+        low_msg_identity = torch.mean(low_identity, dim=2, keepdim=True).transpose(1, 2)
+        high_msg_identity = torch.mean(high_identity, dim=2, keepdim=True).transpose(
             1, 2
         )
-        msg_identity = self.msg_linear_out(msg_identity)
-        # msg_identity = self.msg_linear_out(msg_avg_identity)
+        msg_avg_identity = (
+            low_msg_identity + high_msg_identity
+        ) / 2  # Average the two halves -> shape: [B, 1, 81]
+        # msg_identity = torch.mean(extracted_wm_identity, dim=2, keepdim=True).transpose(
+        #     1, 2
+        # )
+        # msg_identity = self.msg_linear_out(msg_identity)
+        msg_identity = self.msg_linear_out(msg_avg_identity)
         del stft_result, stft_result_identity, extracted_wm, extracted_wm_identity
         return msg, msg_identity
 
