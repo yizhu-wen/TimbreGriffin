@@ -559,7 +559,7 @@ class Decoder(nn.Module):
 
                 bg_added = add_noise(rir_applied, noise, snr_db)
 
-                y_d = julius.LowPassFilter(4000 / self.sample_rate).to(y.device)(
+                y_d = julius.LowPassFilter(4000 / self.original_sample_rate).to(y.device)(
                     bg_added
                 )
 
