@@ -559,9 +559,9 @@ class Decoder(nn.Module):
 
                 bg_added = add_noise(rir_applied, noise, snr_db)
 
-                y_d = julius.LowPassFilter(4000 / self.original_sample_rate).to(y.device)(
-                    bg_added
-                )
+                y_d = julius.LowPassFilter(4000 / self.original_sample_rate).to(
+                    y.device
+                )(bg_added)
 
                 # # bandpass in normalized cutoff units [0, 0.5] if julius expects that
                 # y_d = julius.bandpass_filter(
