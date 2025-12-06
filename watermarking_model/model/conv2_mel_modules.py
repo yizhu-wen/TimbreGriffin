@@ -463,10 +463,11 @@ class Encoder(nn.Module):
                 0.0, 1.0
             )
 
+            masked_y = y * soft_sample_masks
+
             # # 6) Floor ε so mask ∈ [ε, 1]
             # soft_sample_masks = (self.floor_eps + (1.0 - self.floor_eps) * m_up).clamp_(0.0, 1.0)  # [B, T]
 
-            masked_y = y * soft_sample_masks
             # # Threshold the probabilities to obtain a binary mask per chunk.
             # batch_chunk_mask = (batch_chunk_probs > self.vad_threshold).float()
             #
@@ -530,12 +531,12 @@ class Decoder(nn.Module):
             # shape [] scalar int in {0,1,2}
             choice = torch.randint(low=1, high=3, size=(1,), device=y.device).item()
 
-            if choice == 1:
+            if choice == 0:
                 # distortion 1: resample
                 # assumes resample8k: 8k -> 16k or etc, returns same dtype and device
                 y_d = resample8k(y)
 
-            elif choice == 0:
+            elif choice == 1:
                 # distortion 2: quantization style recount
                 # if recount is a method on self, use self.recount(y)
                 y_d = recount(y)
@@ -553,16 +554,21 @@ class Decoder(nn.Module):
                 rir_applied = fftconvolve(y, rir, mode="same")
 
                 # random SNR between 20 and 25 dB, integer
-                snr_db = torch.randint(20, 26, (1,), device=y.device)
+                # snr_db = torch.randint(20, 26, (1,), device=y.device)
+                snr_db = torch.tensor([25], dtype=torch.int64, device=y.device)
 
                 bg_added = add_noise(rir_applied, noise, snr_db)
 
-                # bandpass in normalized cutoff units [0, 0.5] if julius expects that
-                y_d = julius.bandpass_filter(
-                    bg_added,
-                    cutoff_low=self.cutoff_freq_low / self.original_sample_rate,
-                    cutoff_high=self.cutoff_freq_high / self.original_sample_rate,
+                y_d = julius.LowPassFilter(4000 / self.sample_rate).to(y.device)(
+                    bg_added
                 )
+
+                # # bandpass in normalized cutoff units [0, 0.5] if julius expects that
+                # y_d = julius.bandpass_filter(
+                #     bg_added,
+                #     cutoff_low=self.cutoff_freq_low / self.original_sample_rate,
+                #     cutoff_high=self.cutoff_freq_high / self.original_sample_rate,
+                # )
 
         else:
             y_d = y
