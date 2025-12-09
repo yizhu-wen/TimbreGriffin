@@ -14,6 +14,7 @@ import julius
 import math
 import torch.nn.functional as F
 from silero_vad import load_silero_vad
+import torchaudio.functional as AF
 from torchaudio.functional import resample as tf_resample
 from torchaudio.functional import fftconvolve, add_noise
 
@@ -555,13 +556,22 @@ class Decoder(nn.Module):
 
                 # random SNR between 20 and 25 dB, integer
                 # snr_db = torch.randint(20, 26, (1,), device=y.device)
-                snr_db = torch.tensor([25], dtype=torch.int64, device=y.device)
+                snr_db = torch.full(
+                    rir_applied.shape[:-1],  # matches [B] or [B,1]
+                    25.0,  # 25 dB
+                    dtype=rir_applied.dtype,
+                    device=y.device,
+                )
 
                 bg_added = add_noise(rir_applied, noise, snr_db)
 
-                y_d = julius.LowPassFilter(4000 / self.original_sample_rate).to(
-                    y.device
-                )(bg_added)
+                # y_d = julius.LowPassFilter(4000 / self.original_sample_rate).to(
+                #     y.device
+                # )(bg_added)
+
+                y_d = AF.lowpass_biquad(
+                    bg_added, self.original_sample_rate, cutoff_freq=4000.0
+                )
 
                 # # bandpass in normalized cutoff units [0, 0.5] if julius expects that
                 # y_d = julius.bandpass_filter(
