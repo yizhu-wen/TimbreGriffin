@@ -555,13 +555,13 @@ class Decoder(nn.Module):
                 rir_applied = fftconvolve(y, rir, mode="same")
 
                 # random SNR between 20 and 25 dB, integer
-                # snr_db = torch.randint(20, 26, (1,), device=y.device)
-                snr_db = torch.full(
-                    rir_applied.shape[:-1],  # matches [B] or [B,1]
-                    25.0,  # 25 dB
-                    dtype=rir_applied.dtype,
-                    device=y.device,
-                )
+                snr_db = torch.randint(20, 26, (1,), device=y.device)
+                # snr_db = torch.full(
+                #     rir_applied.shape[:-1],  # matches [B] or [B,1]
+                #     25.0,  # 25 dB
+                #     dtype=rir_applied.dtype,
+                #     device=y.device,
+                # )
 
                 bg_added = add_noise(rir_applied, noise, snr_db)
 
