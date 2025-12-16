@@ -320,9 +320,7 @@ def main(configs):
 
             # adv
             if train_config["adv"]:
-                lambda_a = train_config["optimize"][
-                    "lambda_a"
-                ]
+                lambda_a = train_config["optimize"]["lambda_a"]
 
                 g_target_label_encoded = torch.ones((b, 1), device=device)
                 d_on_encoded_for_enc = discriminator(y_wm)
