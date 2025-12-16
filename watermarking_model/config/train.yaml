@@ -46,7 +46,7 @@ optimize:
   target_dilate_ms: 15
   floor_eps: 0.2
   tau: 0.15
-  distortion: true
+  distortion: false
 
 iter:
   epoch: 30

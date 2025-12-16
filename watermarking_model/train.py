@@ -322,7 +322,7 @@ def main(configs):
             if train_config["adv"]:
                 lambda_a = train_config["optimize"][
                     "lambda_a"
-                ]  # modify weights of m and a for better convergence
+                ]
 
                 g_target_label_encoded = torch.ones((b, 1), device=device)
                 d_on_encoded_for_enc = discriminator(y_wm)
