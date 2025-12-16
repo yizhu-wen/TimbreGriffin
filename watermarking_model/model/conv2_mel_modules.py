@@ -207,28 +207,12 @@ class Encoder(nn.Module):
         self.win_length = process_config["mel"]["win_length"]
         self.sampling_rate = process_config["audio"]["or_sample_rate"]
         self.voice_prefilling = (
-            int(
-                (
-                    (process_config["audio"]["audio_prefilling"] + 0.05)
-                    * self.sampling_rate
-                )
-                // self.hop_length
-            )
-            - 1
-        )  # 204
-        self.delay_amt = int(
-            (train_config["watermark"]["delay_amt_second"] * self.sampling_rate)
-            // self.hop_length
-            + 1
-        )  # 51
+            process_config["audio"]["audio_prefilling"] * self.sampling_rate
+        ) // self.hop_length  # 2*16000/160 = 200
         self.future_amt = (
-            int(
-                (train_config["watermark"]["future_amt_second"] * self.sampling_rate)
-                // self.hop_length
-                + 1
-            )
-            - 1
-        )  # 50
+            train_config["watermark"]["future_amt_second"] * self.sampling_rate
+        ) // self.hop_length  # 50
+        self.delay_amt = self.future_amt + 1  # 51
         self.power = 1.0
 
         self.smooth_chunks = train_config["optimize"]["smooth_chunks"]
@@ -298,19 +282,11 @@ class Encoder(nn.Module):
     def forward(self, x, msg, global_step):
         self.stft.num_samples = x.shape[-1]
         _, _, stft_result = self.stft.transform(x)
-        # Evaluate how many chunks we can process
-        # 2s input + 0.5s calculation delay
-        # 2.00*16000 = 32000
-        # 32800 // hop_length + 1 = 201 center=True
-        # 0.5s*16000 = 8000
-        # 8000 // hop_length + 1 = 51 center=True
-        # Predict future 0.5s watermark
-        # 0.5*16000 = 8000
-        # 8000 // hop_length + 1 =51
+
         if (
             int(
-                stft_result.shape[-1]
-                - (self.voice_prefilling + self.future_amt) / self.delay_amt
+                (stft_result.shape[-1] - (self.voice_prefilling + self.future_amt))
+                / self.delay_amt
             )
             <= 0
         ):
