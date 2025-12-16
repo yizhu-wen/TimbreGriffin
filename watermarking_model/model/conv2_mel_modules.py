@@ -206,12 +206,14 @@ class Encoder(nn.Module):
         self.hop_length = process_config["mel"]["hop_length"]
         self.win_length = process_config["mel"]["win_length"]
         self.sampling_rate = process_config["audio"]["or_sample_rate"]
-        self.voice_prefilling = (
-            process_config["audio"]["audio_prefilling"] * self.sampling_rate
-        ) // self.hop_length  # 2*16000/160 = 200
-        self.future_amt = (
-            train_config["watermark"]["future_amt_second"] * self.sampling_rate
-        ) // self.hop_length  # 50
+        self.voice_prefilling = int(
+            (process_config["audio"]["audio_prefilling"] * self.sampling_rate)
+            // self.hop_length
+        )  # 2*16000/160 = 200
+        self.future_amt = int(
+            (train_config["watermark"]["future_amt_second"] * self.sampling_rate)
+            // self.hop_length
+        )  # 50
         self.delay_amt = self.future_amt + 1  # 51
         self.power = 1.0
 
@@ -592,7 +594,7 @@ class Decoder(nn.Module):
         # msg_identity = self.msg_linear_out(msg_identity)
         msg_identity = self.msg_linear_out(msg_avg_identity)
         del stft_result, stft_result_identity, extracted_wm, extracted_wm_identity
-        return msg, msg_identity
+        return msg_identity, msg
 
 
 class Discriminator(nn.Module):

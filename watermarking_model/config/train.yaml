@@ -49,7 +49,7 @@ optimize:
   distortion: true
 
 iter:
-  epoch: 60
+  epoch: 30
   save_circle: 5
   show_circle: 1000
   val_circle: 1000
