@@ -351,8 +351,6 @@ class Encoder(nn.Module):
                 stft_result, watermark, self.voice_prefilling
             )
             del list_of_watermarks
-            mask = stft_result != 0
-            all_watermark_stft = all_watermark_stft * mask + 0.0000001
 
             # Recompute magnitude & phase
             real_part = all_watermark_stft[:, 0, :, :]
