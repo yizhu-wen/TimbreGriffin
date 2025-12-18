@@ -6,17 +6,6 @@ from torch import nn
 from torch.nn import functional as F
 from torchaudio.functional.filtering import highpass_biquad, treble_biquad
 
-# class Loss(nn.Module):
-#     def __init__(self, train_config):
-#         super(Loss, self).__init__()
-#         self.msg_loss = nn.MSELoss()
-#         self.embedding_loss = nn.MSELoss()
-#
-#     def en_de_loss(self, x, w_x, msg, rec_msg):
-#         embedding_loss = self.embedding_loss(x, w_x)
-#         msg_loss = self.msg_loss(msg, rec_msg)
-#         return embedding_loss, msg_loss
-
 
 def basic_loudness(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
     """This is a simpler loudness function that is more stable.
