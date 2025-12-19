@@ -311,6 +311,7 @@ def main(configs):
             # lamda_e = 1.
             # lamda_m = 10
             # lamda_b = 1
+            # lambda_a = 0.01
             if global_step < pre_step:
                 sum_loss = lambda_m * losses[1]
             else:

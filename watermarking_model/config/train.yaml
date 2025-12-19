@@ -19,13 +19,10 @@ watermark:
 
 optimize:
   lr: 0.0001
-  lambda_e: 1.
-  lambda_m: 10.
-  # lambda_m: 0.01
-  lambda_no_m: 0.01
-  lambda_a: 0.01
-  lambda_b: 1.
-  lambda_c: 1.
+  lambda_e: 1.  # l1 waveform loss
+  lambda_m: 0.01 # msg MSE loss
+  lambda_b: 1. # loudness loss
+  lambda_a: 0.01 # adv loss
   batch_size: 4  # remote batch_size=8, local batch_size=2
   step_size: 5000 # large value means do not decay
   gamma: 0.98
