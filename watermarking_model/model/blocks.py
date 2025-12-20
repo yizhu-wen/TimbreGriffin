@@ -9,6 +9,7 @@ class Mish(nn.Module):
     def forward(self, x):
         return x * torch.tanh(F.softplus(x))
 
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.0, max_len=10000):
         super(PositionalEncoding, self).__init__()
@@ -16,21 +17,31 @@ class PositionalEncoding(nn.Module):
 
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
+        )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         # pe = pe.unsqueeze(0).transpose(0, 1)
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x):
-        x = x + self.pe[:x.size(1), :]  # [WORD_NUM, BATCH, DIM]
+        x = x + self.pe[: x.size(1), :]  # [WORD_NUM, BATCH, DIM]
         return self.dropout(x)
 
 
 class FCBlock(nn.Module):
-    """ Fully Connected Block """
+    """Fully Connected Block"""
 
-    def __init__(self, in_features, out_features, activation=None, bias=False, dropout=None, spectral_norm=False):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        activation=None,
+        bias=False,
+        dropout=None,
+        spectral_norm=False,
+    ):
         super(FCBlock, self).__init__()
         self.fc_layer = nn.Sequential()
         self.fc_layer.add_module(
@@ -54,7 +65,7 @@ class FCBlock(nn.Module):
 
 
 class LinearNorm(nn.Module):
-    """ LinearNorm Projection """
+    """LinearNorm Projection"""
 
     def __init__(self, in_features, out_features, bias=False, spectral_norm=False):
         super(LinearNorm, self).__init__()
@@ -72,9 +83,17 @@ class LinearNorm(nn.Module):
 
 
 class Conv1DBlock(nn.Module):
-    """ 1D Convolutional Block """
+    """1D Convolutional Block"""
 
-    def __init__(self, in_channels, out_channels, kernel_size, activation=None, dropout=None, spectral_norm=False):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        activation=None,
+        dropout=None,
+        spectral_norm=False,
+    ):
         super(Conv1DBlock, self).__init__()
 
         self.conv_layer = nn.Sequential()
@@ -110,7 +129,7 @@ class Conv1DBlock(nn.Module):
 
 
 class ConvNorm(nn.Module):
-    """ 1D Convolution """
+    """1D Convolution"""
 
     def __init__(
         self,
@@ -148,9 +167,18 @@ class ConvNorm(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    """ Multi-Head Attention """
+    """Multi-Head Attention"""
 
-    def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1, layer_norm=False, spectral_norm=False):
+    def __init__(
+        self,
+        n_head,
+        d_model,
+        d_k,
+        d_v,
+        dropout=0.1,
+        layer_norm=False,
+        spectral_norm=False,
+    ):
         super(MultiHeadAttention, self).__init__()
 
         self.n_head = n_head
@@ -202,7 +230,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class ScaledDotProductAttention(nn.Module):
-    """ Scaled Dot-Product Attention """
+    """Scaled Dot-Product Attention"""
 
     def __init__(self, temperature):
         super(ScaledDotProductAttention, self).__init__()
@@ -221,20 +249,34 @@ class ScaledDotProductAttention(nn.Module):
         output = torch.bmm(attn, v)
 
         return output, attn
-    
+
 
 class SkipGatedBlock(nn.Module):
     def __init__(self, c_in, c_out, kernel_size, stride, padding):
         super(SkipGatedBlock, self).__init__()
-        self.conv = nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=True)
-        self.gate = nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding, bias=True)
+        self.conv = nn.Conv2d(
+            c_in,
+            c_out,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=True,
+        )
+        self.gate = nn.Conv2d(
+            c_in,
+            c_out,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=True,
+        )
         self.skip_connection = c_in == c_out
 
     def forward(self, x):
         conv_output = self.conv(x)
         gated_output = torch.sigmoid(self.gate(x))
         output = conv_output * gated_output
-        if self.skip_connection: 
+        if self.skip_connection:
             output += x
 
         return output
@@ -244,29 +286,49 @@ class ReluBlock(nn.Module):
     def __init__(self, c_in, c_out, kernel_size, stride, padding):
         super(ReluBlock, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(c_in, c_out, kernel_size=kernel_size, stride=stride, padding=padding, padding_mode="reflect", bias=True),
+            nn.Conv2d(
+                c_in,
+                c_out,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                padding_mode="reflect",
+                bias=True,
+            ),
             nn.InstanceNorm2d(c_out),
-            nn.LeakyReLU()
-            )
+            nn.LeakyReLU(),
+        )
 
     def forward(self, x):
         return self.conv(x)
-    
+
 
 class Conv2Encoder(nn.Module):
-    def __init__(self, input_channel=1, hidden_dim=64, block='skip', n_layers=3):
+    def __init__(self, input_channel=1, hidden_dim=64, block="skip", n_layers=3):
         super(Conv2Encoder, self).__init__()
-        if block == 'skip':
+        if block == "skip":
             core = SkipGatedBlock
-        elif block == 'relu':
+        elif block == "relu":
             core = ReluBlock
         else:
             raise ValueError(f"Invalid block type: {block}")
 
-        layers = [core(c_in=input_channel, c_out=hidden_dim, kernel_size=3, stride=1, padding=1)]
+        layers = [
+            core(
+                c_in=input_channel, c_out=hidden_dim, kernel_size=3, stride=1, padding=1
+            )
+        ]
 
-        for i in range(n_layers-1):
-            layers.append(core(c_in=hidden_dim, c_out=hidden_dim, kernel_size=3, stride=1, padding=1))
+        for i in range(n_layers - 1):
+            layers.append(
+                core(
+                    c_in=hidden_dim,
+                    c_out=hidden_dim,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                )
+            )
 
         self.main = nn.Sequential(*layers)
 
@@ -275,19 +337,31 @@ class Conv2Encoder(nn.Module):
 
 
 class WatermarkEmbedder(nn.Module):
-    def __init__(self, input_channel=1, hidden_dim=64, block='skip', n_layers=4):
+    def __init__(self, input_channel=1, hidden_dim=64, block="skip", n_layers=4):
         super(WatermarkEmbedder, self).__init__()
-        if block == 'skip':
+        if block == "skip":
             core = SkipGatedBlock
-        elif block == 'relu':
+        elif block == "relu":
             core = ReluBlock
         else:
             raise ValueError(f"Invalid block type: {block}")
 
-        layers = [core(c_in=input_channel, c_out=hidden_dim, kernel_size=3, stride=1, padding=1)]
+        layers = [
+            core(
+                c_in=input_channel, c_out=hidden_dim, kernel_size=3, stride=1, padding=1
+            )
+        ]
 
-        for i in range(n_layers-2):
-            layers.append(core(c_in=hidden_dim, c_out=hidden_dim, kernel_size=3, stride=1, padding=1))
+        for i in range(n_layers - 2):
+            layers.append(
+                core(
+                    c_in=hidden_dim,
+                    c_out=hidden_dim,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                )
+            )
 
         ######################### Additional 2 conv2D layers for real time
         layers.append(
@@ -310,7 +384,9 @@ class WatermarkEmbedder(nn.Module):
         )
         #########################
 
-        layers.append(core(c_in=hidden_dim, c_out=2, kernel_size=1, stride=1, padding=0))
+        layers.append(
+            core(c_in=hidden_dim, c_out=2, kernel_size=1, stride=1, padding=0)
+        )
 
         self.main = nn.Sequential(*layers)
 
@@ -319,20 +395,34 @@ class WatermarkEmbedder(nn.Module):
 
 
 class WatermarkExtracter(nn.Module):
-    def __init__(self, input_channel=1, hidden_dim=64, block='skip', n_layers=6):
+    def __init__(self, input_channel=2, hidden_dim=64, block="skip", n_layers=6):
         super(WatermarkExtracter, self).__init__()
-        if block == 'skip':
+        if block == "skip":
             core = SkipGatedBlock
-        elif block == 'relu':
+        elif block == "relu":
             core = ReluBlock
         else:
             raise ValueError(f"Invalid block type: {block}")
-        layers = [core(c_in=input_channel, c_out=hidden_dim, kernel_size=3, stride=1, padding=1)]
+        layers = [
+            core(
+                c_in=input_channel, c_out=hidden_dim, kernel_size=3, stride=1, padding=1
+            )
+        ]
 
-        for i in range(n_layers-2):
-            layers.append(core(c_in=hidden_dim, c_out=hidden_dim, kernel_size=3, stride=1, padding=1))
+        for i in range(n_layers - 2):
+            layers.append(
+                core(
+                    c_in=hidden_dim,
+                    c_out=hidden_dim,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                )
+            )
 
-        layers.append(core(c_in=hidden_dim, c_out=1, kernel_size=3, stride=1, padding=1))
+        layers.append(
+            core(c_in=hidden_dim, c_out=1, kernel_size=3, stride=1, padding=1)
+        )
 
         self.main = nn.Sequential(*layers)
 

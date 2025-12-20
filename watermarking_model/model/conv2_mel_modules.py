@@ -283,7 +283,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, msg, global_step):
         self.stft.num_samples = x.shape[-1]
-        _, _, stft_result = self.stft.transform(x)
+        stft_result = self.stft.transform(x)
 
         if (
             int(
@@ -352,14 +352,10 @@ class Encoder(nn.Module):
             )
             del list_of_watermarks
 
-            # Recompute magnitude & phase
-            real_part = all_watermark_stft[:, 0, :, :]
-            imag_part = all_watermark_stft[:, 1, :, :]
-            spect = torch.sqrt(real_part**2 + imag_part**2)
-            phase = torch.atan2(imag_part, real_part)
-
-            y = self.stft.inverse(spect, phase).squeeze(1)
-            del spect, phase, real_part, imag_part, all_watermark_stft
+            y = self.stft.inverse(
+                all_watermark_stft, num_samples=self.stft.num_samples
+            ).squeeze(1)
+            del all_watermark_stft
 
             with torch.no_grad():
                 # Get chunk-level speech probabilities for the batch.
@@ -559,7 +555,7 @@ class Decoder(nn.Module):
         else:
             y_d = y
 
-        spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
+        stft_result = self.stft.transform(y_d.squeeze(1))
         extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
         # Explicitly split the 162-dim vector into two halves of 81-dim each
         low, high = extracted_wm.chunk(
@@ -574,7 +570,7 @@ class Decoder(nn.Module):
         # msg = self.msg_linear_out(msg)
         msg = self.msg_linear_out(msg_avg)
 
-        _, _, stft_result_identity = self.stft.transform(y_identity)
+        stft_result_identity = self.stft.transform(y_identity)
         extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
         low_identity, high_identity = extracted_wm_identity.chunk(
             2, dim=1
@@ -612,7 +608,7 @@ class Discriminator(nn.Module):
         )
 
     def forward(self, x):
-        _, _, stft_result = self.stft.transform(x)
+        stft_result = self.stft.transform(x)
         x = self.conv(stft_result)
         x = x.squeeze(2).squeeze(2)
         x = self.linear(x)
