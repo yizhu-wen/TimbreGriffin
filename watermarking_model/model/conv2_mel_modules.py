@@ -496,8 +496,16 @@ class Decoder(nn.Module):
             self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
         )
 
+    def _mag2_from_stft_result(self, stft_result):
+        # stft_result: [B,2,F,T] (real/imag)
+        real = stft_result[:, 0]
+        imag = stft_result[:, 1]
+        mag = torch.sqrt(real * real + imag * imag + EPS)  # [B,F,T]
+        x_ex = mag.unsqueeze(1).repeat(1, 2, 1, 1)  # [B,2,F,T]
+        return x_ex
+
     def forward(self, y, global_step=1):
-        y_identity = y
+        y_identity = y.clone()
         if self.distortion:
 
             # pick which augmentation to apply, uniformly at random
@@ -555,8 +563,13 @@ class Decoder(nn.Module):
         else:
             y_d = y
 
+        # --- distortion branch ---
         stft_result = self.stft.transform(y_d.squeeze(1))
-        extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
+        # logmag = torch.log(mag + EPS)  # [B, F, T]
+        x_ex = self._mag2_from_stft_result(stft_result)  # [B,2,F,T]
+
+        extracted_wm = self.EX(x_ex).squeeze(1)  # (B, win_dim, length)
+        # extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
         # Explicitly split the 162-dim vector into two halves of 81-dim each
         low, high = extracted_wm.chunk(
             2, dim=1
@@ -570,8 +583,13 @@ class Decoder(nn.Module):
         # msg = self.msg_linear_out(msg)
         msg = self.msg_linear_out(msg_avg)
 
+        # --- identity branch ---
         stft_result_identity = self.stft.transform(y_identity)
-        extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
+        x_ex_identity = self._mag2_from_stft_result(
+            stft_result_identity
+        )  # [B, 2, F, T]
+        extracted_wm_identity = self.EX(x_ex_identity).squeeze(1)
+        # extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
         low_identity, high_identity = extracted_wm_identity.chunk(
             2, dim=1
         )  # each has shape [B, win_dim / 2, length]
