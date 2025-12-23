@@ -283,7 +283,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, msg, global_step):
         self.stft.num_samples = x.shape[-1]
-        stft_result = self.stft.transform(x)
+        magphase, stft_result = self.stft.transform(x)
 
         if (
             int(
@@ -301,14 +301,23 @@ class Encoder(nn.Module):
                 / self.delay_amt
             )
         ):
+
             carrier_encoded = self.ENc(
-                stft_result[
+                magphase[
                     :,
                     :,
                     :,
                     i * self.delay_amt : self.voice_prefilling + i * self.delay_amt,
                 ]
             )
+            # carrier_encoded = self.ENc(
+            #     stft_result[
+            #         :,
+            #         :,
+            #         :,
+            #         i * self.delay_amt : self.voice_prefilling + i * self.delay_amt,
+            #     ]
+            # )
             # torch.Size([B, 1, 81])
             # torch.Size([B, 81, 1])
             # torch.Size([B, 1, 81, 1])
@@ -329,7 +338,7 @@ class Encoder(nn.Module):
             concatenated_feature = torch.cat(
                 (
                     carrier_encoded,
-                    stft_result[
+                    magphase[
                         :,
                         :,
                         :,
@@ -504,6 +513,16 @@ class Decoder(nn.Module):
         x_ex = mag.unsqueeze(1).repeat(1, 2, 1, 1)  # [B,2,F,T]
         return x_ex
 
+    def _mag2_from_magphase(self, magphase):
+        # magphase: [B, 2, F, T] where [:,0]=magnitude, [:,1]=phase
+        assert (
+            magphase.dim() == 4 and magphase.size(1) == 2
+        ), f"Expected magphase [B,2,F,T], got {tuple(magphase.shape)}"
+
+        mag = magphase[:, 0]  # [B, F, T]
+        x_ex = mag.unsqueeze(1).repeat(1, 2, 1, 1)  # [B, 2, F, T]
+        return x_ex
+
     def forward(self, y, global_step=1):
         y_identity = y.clone()
         if self.distortion:
@@ -564,9 +583,10 @@ class Decoder(nn.Module):
             y_d = y
 
         # --- distortion branch ---
-        stft_result = self.stft.transform(y_d.squeeze(1))
+        magphase, stft_result = self.stft.transform(y_d.squeeze(1))
         # logmag = torch.log(mag + EPS)  # [B, F, T]
-        x_ex = self._mag2_from_stft_result(stft_result)  # [B,2,F,T]
+        # x_ex = self._mag2_from_stft_result(stft_result)  # [B,2,F,T]
+        x_ex = self._mag2_from_magphase(magphase)  # [B,2,F,T]
 
         extracted_wm = self.EX(x_ex).squeeze(1)  # (B, win_dim, length)
         # extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
@@ -584,7 +604,7 @@ class Decoder(nn.Module):
         msg = self.msg_linear_out(msg_avg)
 
         # --- identity branch ---
-        stft_result_identity = self.stft.transform(y_identity)
+        magphase_identity, stft_result_identity = self.stft.transform(y_identity)
         x_ex_identity = self._mag2_from_stft_result(
             stft_result_identity
         )  # [B, 2, F, T]
@@ -626,8 +646,9 @@ class Discriminator(nn.Module):
         )
 
     def forward(self, x):
-        stft_result = self.stft.transform(x)
-        x = self.conv(stft_result)
+        magphase, stft_result = self.stft.transform(x)
+        x = self.conv(magphase)
+        # x = self.conv(stft_result)
         x = x.squeeze(2).squeeze(2)
         x = self.linear(x)
         return x

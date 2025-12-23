@@ -4,6 +4,9 @@ import librosa
 import scipy.io.wavfile
 import scipy.signal
 
+# Optional: set up a small constant
+EPS = 1e-9
+
 
 def _log(x, base):
     if base == 10:
@@ -665,19 +668,43 @@ class fixed_STFT(torch.nn.Module):
         # Create stft_result with shape [b, 2, fre_bins, frame]
         stft_result = torch.stack([real_part, imag_part], dim=1)
 
-        return stft_result
+        magnitude = torch.sqrt(
+            real_part * real_part + imag_part * imag_part + EPS
+        )  # [B, F, frames]
+        phase = torch.atan2(imag_part, real_part)  # [B, F, frames]
 
-    def inverse(self, stft_result, num_samples=None):
+        magphase = torch.stack([magnitude, phase], dim=1)  # [B, 2, F, frames]
+
+        return magphase, stft_result
+
+    def inverse(self, magphase, num_samples=None):
         """
+        magphase: [B, 2, F, frames] where:
+        magphase[:,0] = magnitude
+        magphase[:,1] = phase   (radians, typically in [-pi, pi])
         stft_result: [B, 2, F, frames] where [:,0]=real, [:,1]=imag
         returns: waveform [B, 1, T]
         """
+        # assert (
+        #     stft_result.dim() == 4 and stft_result.size(1) == 2
+        # ), "Expected stft_result shape [B, 2, F, frames]"
+
         assert (
-            stft_result.dim() == 4 and stft_result.size(1) == 2
+            magphase.dim() == 4 and magphase.size(1) == 2
         ), "Expected stft_result shape [B, 2, F, frames]"
 
-        real_part = stft_result[:, 0]  # [B, F, frames]
-        imag_part = stft_result[:, 1]  # [B, F, frames]
+        # real_part = stft_result[:, 0]  # [B, F, frames]
+        # imag_part = stft_result[:, 1]  # [B, F, frames]
+        #
+        # # Make [B, 2F, frames] to match inverse_basis in_channels
+        # recombine = torch.cat([real_part, imag_part], dim=1)  # [B, 2F, frames]
+
+        magnitude = magphase[:, 0]  # [B, F, frames]
+        phase = magphase[:, 1]  # [B, F, frames]
+
+        # Convert (mag, phase) -> (real, imag)
+        real_part = magnitude * torch.cos(phase)
+        imag_part = magnitude * torch.sin(phase)
 
         # Make [B, 2F, frames] to match inverse_basis in_channels
         recombine = torch.cat([real_part, imag_part], dim=1)  # [B, 2F, frames]
