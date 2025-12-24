@@ -283,7 +283,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, msg, global_step):
         self.stft.num_samples = x.shape[-1]
-        magphase, stft_result = self.stft.transform(x)
+        _, _, stft_result = self.stft.transform(x)
 
         if (
             int(
@@ -301,23 +301,14 @@ class Encoder(nn.Module):
                 / self.delay_amt
             )
         ):
-
             carrier_encoded = self.ENc(
-                magphase[
+                stft_result[
                     :,
                     :,
                     :,
                     i * self.delay_amt : self.voice_prefilling + i * self.delay_amt,
                 ]
             )
-            # carrier_encoded = self.ENc(
-            #     stft_result[
-            #         :,
-            #         :,
-            #         :,
-            #         i * self.delay_amt : self.voice_prefilling + i * self.delay_amt,
-            #     ]
-            # )
             # torch.Size([B, 1, 81])
             # torch.Size([B, 81, 1])
             # torch.Size([B, 1, 81, 1])
@@ -338,7 +329,7 @@ class Encoder(nn.Module):
             concatenated_feature = torch.cat(
                 (
                     carrier_encoded,
-                    magphase[
+                    stft_result[
                         :,
                         :,
                         :,
@@ -361,10 +352,14 @@ class Encoder(nn.Module):
             )
             del list_of_watermarks
 
-            y = self.stft.inverse(
-                all_watermark_stft, num_samples=self.stft.num_samples
-            ).squeeze(1)
-            del all_watermark_stft
+            # Recompute magnitude & phase
+            real_part = all_watermark_stft[:, 0, :, :]
+            imag_part = all_watermark_stft[:, 1, :, :]
+            spect = torch.sqrt(real_part**2 + imag_part**2)
+            phase = torch.atan2(imag_part, real_part)
+
+            y = self.stft.inverse(spect, phase).squeeze(1)
+            del spect, phase, real_part, imag_part, all_watermark_stft
 
             with torch.no_grad():
                 # Get chunk-level speech probabilities for the batch.
@@ -505,26 +500,8 @@ class Decoder(nn.Module):
             self.win_dim // 2, msg_length, activation=LeakyReLU(inplace=True)
         )
 
-    def _mag2_from_stft_result(self, stft_result):
-        # stft_result: [B,2,F,T] (real/imag)
-        real = stft_result[:, 0]
-        imag = stft_result[:, 1]
-        mag = torch.sqrt(real * real + imag * imag + EPS)  # [B,F,T]
-        x_ex = mag.unsqueeze(1).repeat(1, 2, 1, 1)  # [B,2,F,T]
-        return x_ex
-
-    def _mag2_from_magphase(self, magphase):
-        # magphase: [B, 2, F, T] where [:,0]=magnitude, [:,1]=phase
-        assert (
-            magphase.dim() == 4 and magphase.size(1) == 2
-        ), f"Expected magphase [B,2,F,T], got {tuple(magphase.shape)}"
-
-        mag = magphase[:, 0]  # [B, F, T]
-        x_ex = mag.unsqueeze(1).repeat(1, 2, 1, 1)  # [B, 2, F, T]
-        return x_ex
-
     def forward(self, y, global_step=1):
-        y_identity = y.clone()
+        y_identity = y
         if self.distortion:
 
             # pick which augmentation to apply, uniformly at random
@@ -582,14 +559,8 @@ class Decoder(nn.Module):
         else:
             y_d = y
 
-        # --- distortion branch ---
-        magphase, stft_result = self.stft.transform(y_d.squeeze(1))
-        # logmag = torch.log(mag + EPS)  # [B, F, T]
-        # x_ex = self._mag2_from_stft_result(stft_result)  # [B,2,F,T]
-        x_ex = self._mag2_from_magphase(magphase)  # [B,2,F,T]
-
-        extracted_wm = self.EX(x_ex).squeeze(1)  # (B, win_dim, length)
-        # extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
+        spect, phase, stft_result = self.stft.transform(y_d.squeeze(1))
+        extracted_wm = self.EX(stft_result).squeeze(1)  # (B, win_dim, length)
         # Explicitly split the 162-dim vector into two halves of 81-dim each
         low, high = extracted_wm.chunk(
             2, dim=1
@@ -603,13 +574,8 @@ class Decoder(nn.Module):
         # msg = self.msg_linear_out(msg)
         msg = self.msg_linear_out(msg_avg)
 
-        # --- identity branch ---
-        magphase_identity, stft_result_identity = self.stft.transform(y_identity)
-        x_ex_identity = self._mag2_from_stft_result(
-            stft_result_identity
-        )  # [B, 2, F, T]
-        extracted_wm_identity = self.EX(x_ex_identity).squeeze(1)
-        # extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
+        _, _, stft_result_identity = self.stft.transform(y_identity)
+        extracted_wm_identity = self.EX(stft_result_identity).squeeze(1)
         low_identity, high_identity = extracted_wm_identity.chunk(
             2, dim=1
         )  # each has shape [B, win_dim / 2, length]
@@ -646,9 +612,8 @@ class Discriminator(nn.Module):
         )
 
     def forward(self, x):
-        magphase, stft_result = self.stft.transform(x)
-        x = self.conv(magphase)
-        # x = self.conv(stft_result)
+        _, _, stft_result = self.stft.transform(x)
+        x = self.conv(stft_result)
         x = x.squeeze(2).squeeze(2)
         x = self.linear(x)
         return x
