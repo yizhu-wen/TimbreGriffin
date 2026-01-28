@@ -206,15 +206,14 @@ class Encoder(nn.Module):
         self.hop_length = process_config["mel"]["hop_length"]
         self.win_length = process_config["mel"]["win_length"]
         self.sampling_rate = process_config["audio"]["or_sample_rate"]
-        self.voice_prefilling = int(
-            (process_config["audio"]["audio_prefilling"] * self.sampling_rate)
-            // self.hop_length
-        )  # 2*16000/160 = 200
+        self.voice_prefilling = (
+            process_config["audio"]["audio_prefilling"] * self.sampling_rate
+        ) // self.hop_length + 1  # 201
         self.future_amt = int(
             (train_config["watermark"]["future_amt_second"] * self.sampling_rate)
             // self.hop_length
         )  # 50
-        self.delay_amt = self.future_amt + 1  # 51
+        self.half_sec_amt = int((0.5 * self.sampling_rate) / self.hop_length + 1)  # 51
         self.power = 1.0
 
         self.smooth_chunks = train_config["optimize"]["smooth_chunks"]
@@ -228,9 +227,7 @@ class Encoder(nn.Module):
 
         self.vocoder_step = model_config["structure"]["vocoder_step"]
         # MLP for the input wm
-        # self.msg_linear_in = FCBlock(
-        #     msg_length, self.win_dim, activation=LeakyReLU(inplace=True)
-        # )
+        # self.msg_linear_in = FCBlock(msg_length, self.win_dim, activation=LeakyReLU(inplace=True))
         self.msg_linear_in = FCBlock(
             msg_length, self.win_dim // 2, activation=LeakyReLU(inplace=True)
         )
@@ -256,7 +253,7 @@ class Encoder(nn.Module):
             n_layers=self.layers_EM,
         )
 
-    def pad_w_zero_stft(self, input_stft, watermark_stft, voice_prefilling):
+    def pad_w_zero_stft(self, input_stft, watermark_stft):
         """
         Pad the watermarked stft output with zeros on the left + right,
         respecting future_amt and chunk-based offsets.
@@ -265,14 +262,13 @@ class Encoder(nn.Module):
         zeros_right_len = (
             input_stft.shape[3]
             - watermark_stft.shape[3]
-            - (voice_prefilling + self.future_amt)
+            - (self.voice_prefilling + self.future_amt)
         )
         if zeros_right_len < 0:
             # Edge case: won't happen if chunking logic is correct, but just to be safe
             zeros_right_len = 0
-
         zeros_left = torch.zeros_like(
-            input_stft[:, :, :, : voice_prefilling + self.future_amt]
+            input_stft[:, :, :, : self.voice_prefilling + self.future_amt]
         )
         zeros_right = torch.zeros_like(input_stft[:, :, :, :zeros_right_len])
 
@@ -288,7 +284,7 @@ class Encoder(nn.Module):
         if (
             int(
                 (stft_result.shape[-1] - (self.voice_prefilling + self.future_amt))
-                / self.delay_amt
+                / self.half_sec_amt
             )
             <= 0
         ):
@@ -298,7 +294,7 @@ class Encoder(nn.Module):
         for i in range(
             int(
                 (stft_result.shape[-1] - (self.voice_prefilling + self.future_amt))
-                / self.delay_amt
+                / self.half_sec_amt
             )
         ):
             carrier_encoded = self.ENc(
@@ -306,7 +302,8 @@ class Encoder(nn.Module):
                     :,
                     :,
                     :,
-                    i * self.delay_amt : self.voice_prefilling + i * self.delay_amt,
+                    i * self.half_sec_amt : self.voice_prefilling
+                    + i * self.half_sec_amt,
                 ]
             )
             # torch.Size([B, 1, 81])
@@ -333,7 +330,8 @@ class Encoder(nn.Module):
                         :,
                         :,
                         :,
-                        i * self.delay_amt : self.voice_prefilling + i * self.delay_amt,
+                        i * self.half_sec_amt : self.voice_prefilling
+                        + i * self.half_sec_amt,
                     ],
                     watermark_encoded,
                 ),
@@ -348,9 +346,9 @@ class Encoder(nn.Module):
         if len(list_of_watermarks) > 0:
             watermark = torch.cat(list_of_watermarks, dim=-1)
             all_watermark_stft, zeros_right = self.pad_w_zero_stft(
-                stft_result, watermark, self.voice_prefilling
+                stft_result, watermark
             )
-            del list_of_watermarks
+            del list_of_watermarks, watermark
 
             y = self.stft.inverse(
                 all_watermark_stft, num_samples=self.stft.num_samples

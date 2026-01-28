@@ -64,16 +64,8 @@ class WavDataset(Dataset):
         self.win_len = process_config["audio"]["win_len"]
         self.max_len = process_config["audio"]["max_len"]
         self.data_percentage = process_config["audio"]["data_percentage"]
-        self.delay_amt = (
-            train_config["watermark"]["delay_amt_second"] * self.original_sample_rate
-        )
-        self.future_amt = (
-            train_config["watermark"]["future_amt_second"] * self.original_sample_rate
-        )
 
-        self.min_length = int(
-            2 * self.original_sample_rate + self.delay_amt + self.future_amt
-        )
+        self.min_length = int((2 + 0.5 + 0.5) * self.original_sample_rate)
 
         # Filter out short files
         self.wavs = self._filter_wavs()

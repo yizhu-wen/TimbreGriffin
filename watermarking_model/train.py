@@ -273,7 +273,6 @@ def main(configs):
     lambda_m = train_config["optimize"]["lambda_m"]
     lambda_b = train_config["optimize"]["lambda_b"]
     sample_rate = process_config["audio"]["or_sample_rate"]
-    hop_length = process_config["mel"]["hop_length"]
     global_step = 0
     train_len = len(train_audios_loader)
 

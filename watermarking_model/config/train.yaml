@@ -14,7 +14,6 @@ path:
 
 watermark:
   length: 10
-  delay_amt_second: 0.5
   future_amt_second: 0.5
 
 optimize:
@@ -43,7 +42,7 @@ optimize:
   target_dilate_ms: 15
   floor_eps: 0.2
   tau: 0.15
-  distortion: true
+  distortion: false
 
 iter:
   epoch: 40

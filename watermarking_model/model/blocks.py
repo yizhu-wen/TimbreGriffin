@@ -379,7 +379,7 @@ class WatermarkEmbedder(nn.Module):
                 c_out=hidden_dim,
                 kernel_size=(3, 4),
                 stride=(1, 2),
-                padding=(1, 1),
+                padding=(1, 2),
             )
         )
         #########################

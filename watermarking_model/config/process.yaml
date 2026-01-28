@@ -6,7 +6,7 @@ audio:
   win_len: 256
   max_len: 176000
   data_percentage: 1.0
-  audio_prefilling: 2.00
+  audio_prefilling: 2
 
 
 #mel:
