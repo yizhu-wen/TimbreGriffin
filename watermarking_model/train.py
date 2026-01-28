@@ -206,8 +206,6 @@ def main(configs):
                 ),
                 "batch_size": train_config["optimize"]["batch_size"],
                 "learning_rate": train_config["optimize"]["lr"],
-                "delay_amt_second": train_config["watermark"]["delay_amt_second"],
-                "future_amt_second": train_config["watermark"]["future_amt_second"],
                 "nbits": train_config["watermark"]["length"],
                 "epochs": train_config["iter"]["epoch"],
                 "save_circle": train_config["iter"]["save_circle"],
