@@ -13,7 +13,7 @@ path:
   log_path: "results/log/"
 
 watermark:
-  length: 10
+  length: 72
   future_amt_second: 0.5
 
 optimize:
