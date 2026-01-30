@@ -208,7 +208,7 @@ class Encoder(nn.Module):
         self.sampling_rate = process_config["audio"]["or_sample_rate"]
         self.voice_prefilling = (
             process_config["audio"]["audio_prefilling"] * self.sampling_rate
-        ) // self.hop_length + 1  # 201
+        ) // self.hop_length + 1  + 3 # 204
         self.future_amt = int(
             (train_config["watermark"]["future_amt_second"] * self.sampling_rate)
             // self.hop_length
